@@ -12,7 +12,26 @@ mkdir -p "$out"
 shot() {
     adb exec-out screencap -p > "$out/$1.png"
     set +x
-    echo "STATE $1: pid=$(adb shell pidof "$pkg" | tr -d '\r') overlays=$(adb shell dumpsys window windows | grep -c "$pkg")"
+    echo "STATE $1: pid=$(adb shell pidof "$pkg" | tr -d '\r')"
+    # Our overlay windows and where they are on screen.
+    adb shell dumpsys window windows | tr -d '\r' | awk -v pkg="$pkg" '
+        /Window #/ { mine = index($0, pkg) > 0 }
+        mine && /ty=APPLICATION_OVERLAY/ { overlay = 1 }
+        mine && overlay && /frame=/ { print "  OVERLAY " $0; overlay = 0 }'
+    # Colour under the expected bubble and pet spots (if known yet).
+    if [ -n "${px:-}" ]; then
+        adb exec-out screencap > "$out/$1.raw"
+        python3 - "$out/$1.raw" "$bx" "$by" "$px" "$py" <<'PY'
+import struct, sys
+data = open(sys.argv[1], "rb").read()
+w, h = struct.unpack_from("<II", data, 0)
+off = 16 if len(data) >= 16 + w * h * 4 else 12
+def px(x, y):
+    i = off + (int(y) * w + int(x)) * 4
+    return tuple(data[i:i + 3])
+print("  PIXEL bubble", px(sys.argv[2], sys.argv[3]), "pet", px(sys.argv[4], sys.argv[5]))
+PY
+    fi
     if command -v ffmpeg >/dev/null; then
         ffmpeg -loglevel error -y -i "$out/$1.png" -vf scale=200:-1 -q:v 18 "$out/$1.jpg"
         echo "BEGIN-SHOT $1"
