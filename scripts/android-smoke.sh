@@ -16,7 +16,7 @@ shot() {
     if command -v ffmpeg >/dev/null; then
         ffmpeg -loglevel error -y -i "$out/$1.png" -vf scale=200:-1 -q:v 18 "$out/$1.jpg"
         echo "BEGIN-SHOT $1"
-        base64 -w 0; echo "$out/$1.jpg"
+        base64 -w 0 "$out/$1.jpg"; echo
         echo "END-SHOT $1"
     fi
     set -x
