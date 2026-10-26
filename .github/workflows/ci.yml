@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Build on the oldest supported Ubuntu so the binary's glibc requirement
+    # is low enough for Linux Mint 21 and newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --release --locked -- -D warnings
+      - run: cargo test --release --locked
+      - run: cargo build --release --locked
+      - name: Package
+        run: |
+          mkdir -p dist/petodoro
+          cp target/release/petodoro README.md LICENSE install.sh uninstall.sh dist/petodoro/
+          tar -C dist -czf petodoro-x86_64-linux.tar.gz petodoro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: petodoro-x86_64-linux
+          path: petodoro-x86_64-linux.tar.gz
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: petodoro-x86_64-linux.tar.gz

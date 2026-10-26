@@ -1,0 +1,22 @@
+[package]
+name = "petodoro"
+version = "0.1.0"
+edition = "2021"
+description = "A tiny floating desktop pet with a pomodoro timer and a stopwatch"
+license = "MIT"
+readme = "README.md"
+rust-version = "1.75"
+
+[dependencies]
+# Pure-Rust X11 client: no libX11 / -dev packages needed to build.
+x11rb = { version = "0.13", features = ["shape"] }
+# CPU 2D rasterizer used to draw the pets.
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
