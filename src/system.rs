@@ -53,7 +53,7 @@ fn remove_files(paths: &[PathBuf]) -> std::io::Result<()> {
 
 // ------------------------------------------------------------ Linux / BSD
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
 mod os {
     use super::*;
     use crate::config::config_dir;
@@ -339,6 +339,60 @@ mod os {
     }
 }
 
+// ---------------------------------------------------------------- Android
+
+#[cfg(target_os = "android")]
+mod os {
+    use super::*;
+    use crate::config::config_dir;
+    use crate::platform::android::with_service;
+    use jni::objects::JValue;
+
+    pub fn notify(summary: &str, body: &str) {
+        with_service(|env, s| {
+            let (t, b) = (env.new_string(summary)?, env.new_string(body)?);
+            let args = [JValue::Object(&t), JValue::Object(&b)];
+            env.call_method(s, "showNotification", "(Ljava/lang/String;Ljava/lang/String;)V", &args).map(|_| ())
+        });
+    }
+
+    pub fn chime() -> bool {
+        with_service(|env, s| env.call_method(s, "chime", "()V", &[]).map(|_| ()));
+        true
+    }
+
+    /// The app's boot receiver starts the pet when this file exists.
+    fn flag() -> PathBuf {
+        config_dir().join("petodoro").join("autostart")
+    }
+
+    pub fn autostart_enabled() -> bool {
+        flag().exists()
+    }
+
+    pub fn set_autostart(on: bool) -> std::io::Result<()> {
+        let f = flag();
+        if on {
+            fs::create_dir_all(f.parent().unwrap())?;
+            fs::write(f, "on\n")
+        } else {
+            remove_files(&[f])
+        }
+    }
+
+    pub fn install_self() -> std::io::Result<PathBuf> {
+        Err(other_error("not needed on Android: install the APK"))
+    }
+
+    pub fn uninstall_self() -> std::io::Result<()> {
+        Err(other_error("uninstall the app from Android settings"))
+    }
+
+    pub fn stop_outdated_instances() -> bool {
+        false
+    }
+}
+
 // ---------------------------------------------------------------- Windows
 
 #[cfg(windows)]
@@ -541,7 +595,7 @@ pub fn local_date() -> String {
     }
 }
 
-#[cfg(all(test, unix, not(target_os = "macos")))]
+#[cfg(all(test, unix, not(any(target_os = "macos", target_os = "android"))))]
 mod tests {
     use super::*;
 

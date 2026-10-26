@@ -91,10 +91,94 @@ jobs:
           name: petodoro-${{ matrix.name }}
           path: out/*
 
+  android:
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Lint for Android
+        run: cargo clippy --release --locked --target aarch64-linux-android -- -D warnings
+      - name: Build the Rust library for each ABI
+        run: |
+          tc="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$tc/aarch64-linux-android26-clang"
+          export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$tc/armv7a-linux-androideabi26-clang"
+          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$tc/x86_64-linux-android26-clang"
+          for pair in aarch64-linux-android:arm64-v8a armv7-linux-androideabi:armeabi-v7a x86_64-linux-android:x86_64; do
+            target="${pair%%:*}"; abi="${pair##*:}"
+            cargo rustc --release --locked --lib --target "$target" --crate-type cdylib
+            mkdir -p "android/app/src/main/jniLibs/$abi"
+            cp "target/$target/release/libpetodoro.so" "android/app/src/main/jniLibs/$abi/"
+          done
+      - name: Build the APK
+        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Sign with the real key if the repository has one configured.
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export PETODORO_KEYSTORE="$RUNNER_TEMP/release.jks"
+            export PETODORO_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+            export PETODORO_KEY_ALIAS="$KEY_ALIAS"
+            export PETODORO_KEY_PASSWORD="$KEY_PASSWORD"
+          fi
+          ./gradlew --no-daemon assembleRelease
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk ../out/petodoro-android.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: petodoro-android
+          path: out/*
+
+  # Boot an emulator, show the pet, poke it, and keep screenshots.
+  android-emulator:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: petodoro-android
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: scripts/android-smoke.sh apk/petodoro-android.apk screenshots
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: android-screenshots
+          path: screenshots/*
+
   # Every push to the default branch (re)publishes the release for the
   # version in Cargo.toml; bump the version to start a new release.
   release:
-    needs: build
+    needs: [build, android]
     # Publish whatever built, so one broken platform doesn't block the others.
     if: ${{ !cancelled() && needs.build.result != 'skipped' && (startsWith(github.ref, 'refs/tags/v') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
     runs-on: ubuntu-22.04
@@ -127,7 +211,8 @@ jobs:
             | Linux on ARM (Raspberry Pi…) | `petodoro-arm64.deb` | `sudo apt install ./petodoro-arm64.deb` |
             | **Windows** 10/11 | `petodoro-windows.exe` | double-click (if SmartScreen warns: *More info → Run anyway*) |
             | **macOS** 11+ | `petodoro-macos.zip` | unzip, move *Petodoro.app* to Applications, right-click → *Open* the first time |
+            | **Android** 8+ | `petodoro-android.apk` | open it on your phone → *Install*, then allow *Display over other apps* |
             | Any Linux, no install | `petodoro-x86_64-linux.tar.gz` | unpack, run `./petodoro` |
 
-            Right-click the pet for the menu: choose a pet, pomodoro / stopwatch, themes, settings.
+            Right-click the pet (long-press on Android) for the menu: choose a pet, pomodoro / stopwatch, themes, settings.
           files: out/*

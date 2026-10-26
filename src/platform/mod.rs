@@ -5,6 +5,7 @@
 //! - Linux / BSD: X11 (x11rb)
 //! - Windows: Win32 layered windows
 //! - macOS: Cocoa
+//! - Android: overlay views driven through JNI
 
 use std::error::Error;
 
@@ -77,15 +78,20 @@ pub fn rgba_to_bgra(src: &[u8], dst: &mut Vec<u8>) {
     }
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
 mod x11;
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
 pub use x11::{Display, Surface};
 
 #[cfg(windows)]
 mod win32;
 #[cfg(windows)]
 pub use win32::{Display, Surface};
+
+#[cfg(target_os = "android")]
+pub(crate) mod android;
+#[cfg(target_os = "android")]
+pub use android::{Display, Surface};
 
 #[cfg(target_os = "macos")]
 mod macos;

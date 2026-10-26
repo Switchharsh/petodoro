@@ -1,20 +1,8 @@
-//! Petodoro: a tiny floating desktop pet with a pomodoro timer and stopwatch.
+//! Petodoro desktop command line.
 #![cfg_attr(windows, windows_subsystem = "windows")]
-#![allow(unknown_lints, clippy::manual_is_multiple_of, clippy::too_many_arguments)]
 
-mod app;
-mod config;
-mod font;
-mod gfx;
-mod lines;
-mod pets;
-mod platform;
-mod render;
-mod system;
-mod timer;
-
-use config::{Config, Mode};
-use std::time::Instant;
+use petodoro::config::{self, Config, Mode};
+use petodoro::{pets, render, system};
 
 const HELP: &str = "\
 petodoro - a floating desktop pet with a pomodoro timer and stopwatch
@@ -178,8 +166,10 @@ fn main() {
     }
     system::ignore_children();
 
-    if let Err(e) = run(cfg) {
-        if cfg!(all(unix, not(target_os = "macos"))) && std::env::var_os("DISPLAY").is_none() {
+    if let Err(e) = petodoro::run(cfg) {
+        if cfg!(all(unix, not(any(target_os = "macos", target_os = "android"))))
+            && std::env::var_os("DISPLAY").is_none()
+        {
             die("no X display found. Petodoro needs an X11 session (the default on Linux Mint)");
         }
         die(e);
@@ -195,28 +185,4 @@ fn wait_for_lock() -> bool {
         }
     }
     false
-}
-
-fn run(cfg: Config) -> platform::Res<()> {
-    let dpy = platform::Display::connect()?;
-    let mut app = app::App::new(dpy, cfg)?;
-    loop {
-        while let Some(ev) = app.dpy.poll()? {
-            app.handle(ev)?;
-        }
-        if app.quit {
-            return Ok(());
-        }
-        let now = Instant::now();
-        app.update(now)?;
-        app.render(now)?;
-        app.dpy.flush()?;
-        // Events may have been buffered while we were talking to the server.
-        if let Some(ev) = app.dpy.poll()? {
-            app.handle(ev)?;
-            continue;
-        }
-        // Sleep until there's input or the next frame is due.
-        app.dpy.wait(app.next_timeout(Instant::now()));
-    }
 }

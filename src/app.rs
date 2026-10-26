@@ -178,7 +178,7 @@ fn secs(n: u64) -> Duration {
 
 impl App {
     pub fn new(dpy: Display, cfg: Config) -> Res<App> {
-        let (w, h) = render::window_size(cfg.scale);
+        let (w, h) = render::window_size(cfg.scale * dpy.ui_scale);
         let default = (dpy.work.right() - w as i32 - 60, dpy.work.bottom() - h as i32 - 40);
         let pos = clamp_pos(&dpy, cfg.pos.unwrap_or(default), w, h);
         let surf = dpy.create_pet_window(pos.0, pos.1, w, h)?;
@@ -272,7 +272,12 @@ impl App {
                         self.shake = Shake { extreme: rx, ..Shake::default() };
                     }
                     2 => self.act(Action::Reset, true)?,
-                    3 => self.open_menu(rx, ry)?,
+                    3 => {
+                        // A long press on Android arrives after the finger went down.
+                        self.press = None;
+                        self.dragging = false;
+                        self.open_menu(rx, ry)?
+                    }
                     4 | 5 => self.scroll(button == 4),
                     _ => {}
                 }
@@ -326,7 +331,7 @@ impl App {
     }
 
     fn click(&mut self, x: i32, y: i32) {
-        let (bx, by, bw, bh) = render::bubble_rect(self.cfg.scale);
+        let (bx, by, bw, bh) = render::bubble_rect(self.px_scale());
         let on_bubble = self.cfg.mode != Mode::PetOnly && x >= bx && x < bx + bw && y >= by && y < by + bh;
         if on_bubble {
             let _ = self.act(Action::Toggle, true);
@@ -466,8 +471,13 @@ impl App {
         Ok(())
     }
 
+    /// Pixels per drawing unit: the chosen size times the screen's density.
+    fn px_scale(&self) -> f32 {
+        self.cfg.scale * self.dpy.ui_scale
+    }
+
     fn set_scale(&mut self, scale: f32) -> Res<()> {
-        let (w, h) = render::window_size(scale);
+        let (w, h) = render::window_size(scale * self.dpy.ui_scale);
         // Keep the pet's feet where they were.
         let x = self.pos.0 + (self.surf.w as i32 - w as i32) / 2;
         let y = self.pos.1 + self.surf.h as i32 - h as i32;
@@ -586,7 +596,7 @@ impl App {
 
     fn menu_view(&self, page: Page) -> (MenuView, Vec<Action>) {
         let (items, actions) = self.menu_items(page);
-        let p = render::menu_font(self.cfg.scale);
+        let p = render::menu_font(self.px_scale());
         let grid = if page == Page::Pets { render::pet_icons(MenuView::icon_size(p)) } else { vec![] };
         let title = match page {
             Page::Main => self.menu_title(),
@@ -711,7 +721,7 @@ impl App {
             Persona::Sleepy => 22.0,
             _ => 45.0,
         };
-        base * self.cfg.scale / 1.5
+        base * self.px_scale() / 1.5
     }
 
     fn walk_interval(&mut self) -> Duration {
@@ -724,7 +734,7 @@ impl App {
 
     fn start_walk(&mut self, now: Instant) {
         let (min_x, max_x) = (self.dpy.screen.x, self.dpy.screen.right() - self.surf.w as i32);
-        let dist = (40 + self.rand() % 160) as f32 * self.cfg.scale / 1.5;
+        let dist = (40 + self.rand() % 160) as f32 * self.px_scale() / 1.5;
         let mut dir = if self.rand() % 2 == 0 { 1 } else { -1 };
         // Head back toward the middle when near an edge.
         if self.pos.0 < min_x + 80 {
@@ -959,7 +969,7 @@ impl App {
     }
 
     pub fn render(&mut self, now: Instant) -> Res<()> {
-        let scene = Scene { scale: self.cfg.scale, pet: self.cfg.pet, pose: self.pose(now), bubble: self.bubble(now) };
+        let scene = Scene { scale: self.px_scale(), pet: self.cfg.pet, pose: self.pose(now), bubble: self.bubble(now) };
         if self.dirty || self.last_scene.as_ref() != Some(&scene) {
             render::draw_scene(&mut self.pm, &scene, &mut self.pets);
             self.dpy.present(&mut self.surf, &self.pm)?;

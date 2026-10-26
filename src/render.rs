@@ -268,9 +268,9 @@ pub struct MenuView {
 
 pub const GRID_COLS: usize = 5;
 
-/// Menu font size for a pet scale: S 2, M 3, L and XL 4.
+/// Menu font size for a pet scale: S 2, M 3, L 4, XL 5 (more on dense phone screens).
 pub fn menu_font(scale: f32) -> u32 {
-    ((scale * 2.0).round() as u32).clamp(2, 4)
+    ((scale * 2.0).round() as u32).clamp(2, 9)
 }
 
 struct MenuLayout {

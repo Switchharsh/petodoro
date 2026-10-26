@@ -47,6 +47,12 @@ pub struct P {
     mirror: Option<f32>,
 }
 
+impl Default for P {
+    fn default() -> Self {
+        P::new()
+    }
+}
+
 impl P {
     pub fn new() -> Self {
         P { pb: PathBuilder::new(), mirror: None }

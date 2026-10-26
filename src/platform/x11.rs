@@ -39,6 +39,8 @@ pub struct Display {
     pub screen: Bounds,
     /// Where the pet starts by default (same as `screen` on X11).
     pub work: Bounds,
+    /// Extra scale for dense screens (1.0 on desktops).
+    pub ui_scale: f32,
     depth: u8,
     visual: Visualid,
     colormap: Colormap,
@@ -94,6 +96,7 @@ impl Display {
             root: screen.root,
             screen: screen_bounds,
             work: screen_bounds,
+            ui_scale: 1.0,
             conn,
             atoms,
             depth,

@@ -29,6 +29,8 @@ pub struct Display {
     app: Retained<NSApplication>,
     pub screen: Bounds,
     pub work: Bounds,
+    /// Extra scale for dense screens (1.0 on desktops).
+    pub ui_scale: f32,
     /// Height of the main screen, for flipping y.
     main_h: f64,
     queue: RefCell<VecDeque<WinEvent>>,
@@ -84,6 +86,7 @@ impl Display {
             app,
             screen,
             work,
+            ui_scale: 1.0,
             main_h,
             queue: RefCell::new(VecDeque::new()),
             sizes: RefCell::new(vec![]),

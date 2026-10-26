@@ -103,6 +103,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 pub struct Display {
     pub screen: Bounds,
     pub work: Bounds,
+    /// Extra scale for dense screens (1.0 on desktops).
+    pub ui_scale: f32,
     class: Vec<u16>,
     hinst: HINSTANCE,
 }
@@ -192,7 +194,7 @@ impl Display {
             } else {
                 screen
             };
-            Ok(Display { screen, work, class, hinst })
+            Ok(Display { screen, work, ui_scale: 1.0, class, hinst })
         }
     }
 
