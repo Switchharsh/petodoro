@@ -187,10 +187,6 @@ fn run(cfg: Config) -> platform::Res<()> {
     let mut app = app::App::new(dpy, cfg)?;
     loop {
         while let Some(ev) = app.dpy.poll()? {
-            if let Some(f) = std::env::var_os("PETO_LOG") {
-                use std::io::Write;
-                let _ = writeln!(std::fs::OpenOptions::new().create(true).append(true).open(f).unwrap(), "{ev:?}");
-            }
             app.handle(ev)?;
         }
         if app.quit {

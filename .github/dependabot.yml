@@ -1,0 +1,11 @@
+# Keep pinned GitHub Actions and Rust crates up to date with security fixes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly

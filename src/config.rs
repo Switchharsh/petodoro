@@ -261,7 +261,8 @@ impl Config {
     }
 
     pub fn add_friendship(&mut self, pet: PetKind, n: u32) {
-        *self.friendship.entry(pet.name().to_string()).or_insert(0) += n;
+        let v = self.friendship.entry(pet.name().to_string()).or_insert(0);
+        *v = v.saturating_add(n);
     }
 
     /// Reset the daily stats if the date changed.

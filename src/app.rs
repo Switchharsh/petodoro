@@ -338,8 +338,11 @@ impl App {
     /// Clicking the pet: hearts, friendship, and a combo counter for fidgeting.
     fn pat(&mut self, now: Instant) {
         let was_asleep = self.mood == Mood::Sleep;
-        self.combo =
-            if self.last_pat.is_some_and(|t| now.duration_since(t) < COMBO_WINDOW) { self.combo + 1 } else { 1 };
+        self.combo = if self.last_pat.is_some_and(|t| now.duration_since(t) < COMBO_WINDOW) {
+            self.combo.saturating_add(1)
+        } else {
+            1
+        };
         self.last_pat = Some(now);
         self.love_until = Some(now + LOVE_FOR);
         if self.last_friend_pat.map_or(true, |t| now.duration_since(t) > secs(3)) {
@@ -814,9 +817,10 @@ impl App {
         let mins = self.cfg.pomo.minutes(next);
         let (title, body) = if done == Phase::Focus {
             self.cfg.roll_day(&local_date());
-            self.cfg.today.pomodoros += 1;
-            self.cfg.today.focus_minutes += self.cfg.pomo.focus_min;
-            self.cfg.total_pomodoros += 1;
+            let c = &mut self.cfg;
+            c.today.pomodoros = c.today.pomodoros.saturating_add(1);
+            c.today.focus_minutes = c.today.focus_minutes.saturating_add(c.pomo.focus_min);
+            c.total_pomodoros = c.total_pomodoros.saturating_add(1);
             self.cfg.add_friendship(self.cfg.pet, 5);
             self.cfg.save();
             let tip = lines::BREAK_TIPS[self.rand() as usize % lines::BREAK_TIPS.len()];

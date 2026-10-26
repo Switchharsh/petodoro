@@ -84,19 +84,40 @@ mod os {
         config_dir().join("autostart").join("petodoro.desktop")
     }
 
+    /// Quote a path for a .desktop `Exec=` line, per the Desktop Entry spec.
+    fn exec_quote(p: &Path) -> String {
+        let mut out = String::from("\"");
+        for c in p.display().to_string().chars() {
+            match c {
+                // Escaped for the quoted argument (\c), then the backslash
+                // escaped again for the string value (\\c).
+                '"' | '`' | '$' => {
+                    out.push_str("\\\\");
+                    out.push(c);
+                }
+                '\\' => out.push_str("\\\\\\\\"),
+                '%' => out.push_str("%%"),
+                '\n' | '\r' => {}
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+        out
+    }
+
     pub fn desktop_entry(exec: &Path) -> String {
         format!(
             "[Desktop Entry]\n\
              Type=Application\n\
              Name=Petodoro\n\
              Comment=Floating desktop pet with a pomodoro timer and stopwatch\n\
-             Exec=\"{}\"\n\
+             Exec={}\n\
              Icon=petodoro\n\
              Terminal=false\n\
              Categories=Utility;Clock;\n\
              Keywords=pomodoro;timer;stopwatch;pet;focus;\n\
              X-GNOME-Autostart-enabled=true\n",
-            exec.display()
+            exec_quote(exec)
         )
     }
 
@@ -407,9 +428,14 @@ mod os {
         set_autostart(false)?;
         let dir = install_dir();
         remove_files(&[shortcut(), dir.join("petodoro.ico"), dir.join("petodoro.old.exe")])?;
-        // We may be running from that folder; delete it a moment after we exit.
-        let cmd = format!("ping -n 3 127.0.0.1 > nul & rmdir /S /Q \"{}\"", dir.display());
-        let _ = quiet(Command::new("cmd").args(["/C", &cmd])).spawn();
+        // We may be running from that folder, so delete it a moment after we
+        // exit. The path goes in as a PowerShell literal ('' escaped), never
+        // through cmd.exe's quoting rules.
+        let script = format!(
+            "Start-Sleep -Seconds 2; Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction SilentlyContinue",
+            dir.display().to_string().replace('\'', "''")
+        );
+        powershell(&script);
         Ok(())
     }
 }
@@ -478,5 +504,17 @@ pub fn local_date() -> String {
         let mut st: windows_sys::Win32::Foundation::SYSTEMTIME = std::mem::zeroed();
         windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut st);
         format!("{:04}-{:02}-{:02}", st.wYear, st.wMonth, st.wDay)
+    }
+}
+
+#[cfg(all(test, unix, not(target_os = "macos")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desktop_exec_is_quoted() {
+        let e = desktop_entry(Path::new("/home/a b/$x`y\"z\\/100%/petodoro"));
+        let line = e.lines().find(|l| l.starts_with("Exec=")).unwrap();
+        assert_eq!(line, r#"Exec="/home/a b/\\$x\\`y\\"z\\\\/100%%/petodoro""#);
     }
 }
