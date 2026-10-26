@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Package a built petodoro binary as a .deb (double-click to install on Mint).
-#   scripts/build-deb.sh target/release/petodoro 0.2.0 [outdir]
+#   scripts/build-deb.sh target/release/petodoro 0.3.0 [outdir]
+# Set DEB_ARCH to override the architecture (default: this machine's).
 set -euo pipefail
 bin="$1"
 version="$2"
 out="${3:-.}"
+arch="${DEB_ARCH:-$(dpkg --print-architecture)}"
 root="$(mktemp -d)"
 trap 'rm -rf -- "$root"' EXIT
 
@@ -32,7 +34,7 @@ glibc="${glibc:-2.34}"
 cat > "$root/DEBIAN/control" <<CONTROL
 Package: petodoro
 Version: $version
-Architecture: amd64
+Architecture: $arch
 Maintainer: Petodoro contributors <petodoro@users.noreply.github.com>
 Installed-Size: $size_kb
 Depends: libc6 (>= $glibc)
@@ -46,6 +48,6 @@ Description: floating desktop pet with a pomodoro timer and stopwatch
  stopwatch, talks, gets dizzy, eats snacks and wanders around.
  Uses about 5 MB of RAM and almost no CPU.
 CONTROL
-deb="$out/petodoro_${version}_amd64.deb"
+deb="$out/petodoro_${version}_${arch}.deb"
 dpkg-deb --root-owner-group --build "$root" "$deb" >/dev/null
 echo "$deb"

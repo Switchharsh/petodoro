@@ -1,4 +1,5 @@
 //! Petodoro: a tiny floating desktop pet with a pomodoro timer and stopwatch.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(unknown_lints, clippy::manual_is_multiple_of, clippy::too_many_arguments)]
 
 mod app;
@@ -14,7 +15,6 @@ mod timer;
 
 use config::{Config, Mode};
 use std::time::Instant;
-use x11rb::connection::Connection;
 
 const HELP: &str = "\
 petodoro - a floating desktop pet with a pomodoro timer and stopwatch
@@ -61,6 +61,7 @@ fn die(msg: impl std::fmt::Display) -> ! {
 }
 
 fn main() {
+    system::attach_console();
     let mut cfg = Config::load();
     let mut changed = false;
     let mut args = std::env::args().skip(1);
@@ -99,7 +100,7 @@ fn main() {
             }
             "--gallery" => {
                 let out = value();
-                render::gallery(1.5, 7).save_png(&out).unwrap_or_else(|e| die(e));
+                render::gallery(1.5, 5).save_png(&out).unwrap_or_else(|e| die(e));
                 println!("wrote {out}");
                 return;
             }
@@ -174,7 +175,7 @@ fn main() {
     system::ignore_children();
 
     if let Err(e) = run(cfg) {
-        if std::env::var_os("DISPLAY").is_none() {
+        if cfg!(all(unix, not(target_os = "macos"))) && std::env::var_os("DISPLAY").is_none() {
             die("no X display found. Petodoro needs an X11 session (the default on Linux Mint)");
         }
         die(e);
@@ -182,11 +183,14 @@ fn main() {
 }
 
 fn run(cfg: Config) -> platform::Res<()> {
-    let x = platform::X::connect()?;
-    let fd = x.fd();
-    let mut app = app::App::new(x, cfg)?;
+    let dpy = platform::Display::connect()?;
+    let mut app = app::App::new(dpy, cfg)?;
     loop {
-        while let Some(ev) = app.x.conn.poll_for_event()? {
+        while let Some(ev) = app.dpy.poll()? {
+            if let Some(f) = std::env::var_os("PETO_LOG") {
+                use std::io::Write;
+                let _ = writeln!(std::fs::OpenOptions::new().create(true).append(true).open(f).unwrap(), "{ev:?}");
+            }
             app.handle(ev)?;
         }
         if app.quit {
@@ -195,15 +199,13 @@ fn run(cfg: Config) -> platform::Res<()> {
         let now = Instant::now();
         app.update(now)?;
         app.render(now)?;
-        app.x.conn.flush()?;
+        app.dpy.flush()?;
         // Events may have been buffered while we were talking to the server.
-        if let Some(ev) = app.x.conn.poll_for_event()? {
+        if let Some(ev) = app.dpy.poll()? {
             app.handle(ev)?;
             continue;
         }
-        let timeout = app.next_timeout(Instant::now());
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
-        // Sleep until X has something for us or the next frame is due.
-        unsafe { libc::poll(&mut pfd, 1, timeout.as_millis().clamp(1, 60_000) as i32) };
+        // Sleep until there's input or the next frame is due.
+        app.dpy.wait(app.next_timeout(Instant::now()));
     }
 }

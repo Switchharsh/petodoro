@@ -1,47 +1,71 @@
-# Petodoro 🍅
+<p align="center"><img src="assets/logo.png" width="128" alt="Tomo, the Petodoro mascot"></p>
 
-[![Download .deb](https://img.shields.io/badge/Download-.deb%20for%20Linux%20Mint-ff5c8a?style=for-the-badge&logo=linuxmint&logoColor=white)](https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-amd64.deb)
-[![Download tar.gz](https://img.shields.io/badge/Download-portable%20tar.gz-8a63d2?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-x86_64-linux.tar.gz)
-[![Latest release](https://img.shields.io/github/v/release/Switchharsh/petodoro?style=for-the-badge&label=latest&color=3fae6a)](https://github.com/Switchharsh/petodoro/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Switchharsh/petodoro/ci.yml?style=for-the-badge&label=build)](https://github.com/Switchharsh/petodoro/actions/workflows/ci.yml)
+<h1 align="center">Petodoro</h1>
 
-A tiny desktop pet that floats on your screen and keeps you company with a
-**pomodoro timer** and a **stopwatch**. Pick it up, drop it anywhere, pat it,
-feed it, shake it (it gets dizzy), and watch it wander around. Made for Linux
-Mint (and any other X11 desktop). Uses about 5 MB of RAM and almost no CPU.
+<p align="center">A tiny desktop pet that floats on your screen and keeps you company with a
+<b>pomodoro timer</b> and a <b>stopwatch</b>. Pick it up, drop it anywhere, pat it,
+feed it, shake it (it gets dizzy) and watch it wander around.<br>
+Runs on <b>Linux</b>, <b>Windows</b> and <b>macOS</b> with about 5 MB of RAM and almost no CPU.</p>
 
-![All 14 pets](assets/pets.png)
+<p align="center">
+<a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-amd64.deb"><img src="https://img.shields.io/badge/Linux%20Mint%20%2F%20Ubuntu-.deb-ff5c8a?style=for-the-badge&logo=linuxmint&logoColor=white" alt="Download for Linux Mint / Ubuntu"></a>
+<a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-windows.exe"><img src="https://img.shields.io/badge/Windows-.exe-3a8fd6?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
+<a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-macos.zip"><img src="https://img.shields.io/badge/macOS-.app-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
+<br>
+<a href="https://github.com/Switchharsh/petodoro/releases/latest"><img src="https://img.shields.io/github/v/release/Switchharsh/petodoro?style=for-the-badge&label=latest&color=3fae6a" alt="Latest release"></a>
+<a href="https://github.com/Switchharsh/petodoro/releases/latest"><img src="https://img.shields.io/badge/more-ARM%20%2F%20portable-8a63d2?style=for-the-badge" alt="All downloads"></a>
+<a href="https://github.com/Switchharsh/petodoro/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Switchharsh/petodoro/ci.yml?style=for-the-badge&label=build" alt="Build status"></a>
+</p>
 
-## Install: pick the easiest one for you
+![All 15 pets](assets/pets.png)
 
-**1. Double-click a `.deb` (easiest).** Click the pink **Download .deb**
-button above (or grab `petodoro-amd64.deb` from the
-[Releases page](https://github.com/Switchharsh/petodoro/releases/latest)), double-click
-it, press *Install Package*, then open **Petodoro** from the app menu. To
-start it on every login, right-click the pet → *START ON LOGIN*.
+## Install
 
-**2. One command in a terminal.** This installs into your home folder, adds
-an app-menu entry, starts on login, and launches the pet:
+Nothing else is needed: no Rust, no runtimes. Pick your system:
+
+### 🐧 Linux Mint / Ubuntu / Debian
+Click the **Linux Mint / Ubuntu** button above, double-click the downloaded
+`petodoro-amd64.deb`, press **Install Package**, then open **Petodoro** from the
+app menu. Or, in a terminal (installs into your home folder, adds a menu entry,
+starts on login):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash
 ```
 
-**3. Just the program.** Click **Download portable tar.gz** above,
-unpack it, and run `./petodoro`. That's the whole app; nothing else is
-needed. `./petodoro --install` copies it into your home folder and sets up
-the app menu and autostart for you.
+ARM (Raspberry Pi etc.): `petodoro-arm64.deb` from the
+[Releases page](https://github.com/Switchharsh/petodoro/releases/latest).
+Any other Linux: the portable `petodoro-x86_64-linux.tar.gz`, unpack and run `./petodoro`.
 
-**4. From source.** `git clone` this repo and run `./install.sh`. It installs
-Rust through [rustup](https://rustup.rs) if you don't have it (or use
-`sudo apt install cargo`, Rust 1.75+), builds Petodoro (no `-dev` packages
-needed), and runs `petodoro --install`.
+### 🪟 Windows 10 / 11
+Click the **Windows** button above and double-click `petodoro-windows.exe`.
+Windows may show *"Windows protected your PC"* because the app isn't signed:
+click **More info → Run anyway**. To add it to the Start menu and start it on
+login, run this in PowerShell:
 
-Remove it with `petodoro --uninstall`, `./uninstall.sh` (add `--purge` to also
-delete settings), or `sudo apt remove petodoro` if you used the `.deb`.
+```powershell
+irm https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.ps1 | iex
+```
 
-> Releases are built automatically by CI: every push to the default branch
-> publishes the version in `Cargo.toml`. Bump that version to start a new release.
+### 🍎 macOS 11+
+Click the **macOS** button above, unzip, and drag **Petodoro.app** into
+Applications. The app isn't notarized, so the first time **right-click it →
+Open → Open**. Or, in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash
+```
+
+### From source (any system)
+`git clone` this repo and run `./install.sh` (Linux/macOS). It installs Rust
+if needed, builds, and runs `petodoro --install`. On Windows:
+`cargo build --release`, then `target\release\petodoro.exe --install`.
+
+**Uninstall:** `petodoro --uninstall` (or `sudo apt remove petodoro` for the `.deb`).
+
+> Releases are built automatically by CI for every platform: every push to the
+> default branch publishes the version in `Cargo.toml`. Bump that version to
+> start a new release.
 
 ## The pets
 
@@ -50,6 +74,7 @@ quickly it falls asleep, and everything it says.
 
 | Pet        | Personality | Looks like                                   | Theme  |
 |------------|-------------|----------------------------------------------|--------|
+| **Tomo**   | sweet       | the Petodoro mascot: a little tomato 🍅      | light  |
 | **Sakura** | sweet       | pink twin-tails, sailor uniform              | light  |
 | **Yuki**   | sweet       | silver hair, cat-ear hoodie                  | light  |
 | **Hikari** | sweet       | blonde ponytail, maid outfit                 | light  |
@@ -92,7 +117,7 @@ walking, dizzy, eating):
 | **Click** the pet             | pat it; click fast for a **combo counter** (fidget toy!) |
 | **Middle-click**              | reset the timer                                          |
 | **Scroll** on the pet         | ±1 minute on a phase that hasn't started yet             |
-| **Right-click**               | menu                                                     |
+| **Right-click**               | menu (big, readable text; grows with the pet's size)     |
 
 - **Talks**: it greets you, reacts to pats, snacks and shakes, cheers when a
   session ends, and sometimes reminds you to drink water or stretch
@@ -110,10 +135,16 @@ walking, dizzy, eating):
 - **Short sessions**: focus can be as short as 5 minutes, which helps for
   getting started on days when 25 feels like too much.
 
-The menu also has pause/resume/reset/skip, mode (pomodoro / stopwatch / just
-pet), pet, size (S–XL), theme, focus/break/long-break lengths, auto-start
-next phase, sound, start on login, and quit. Left-click moves a setting
-forward and right-click moves it back.
+**The menu** has three pages:
+- **Main**: start/pause/reset/skip, **CHOOSE PET**, give a snack, mode
+  (pomodoro / stopwatch / just pet), size (S–XL), settings, quit.
+- **Choose pet**: every pet at a glance; click one to switch instantly.
+- **Settings**: today's stats, theme, focus/break/long-break lengths,
+  auto-start next phase, walking, chatter, sound, start on login.
+
+Left-click moves a setting forward and right-click moves it back.
+
+<p align="center"><img src="assets/picker.png" width="420" alt="The pet picker"></p>
 
 ### Command line
 
@@ -137,8 +168,8 @@ text). Only one pet runs at a time.
 ## Light on resources
 
 About 5 MB of RAM and under 0.5% of one CPU core, even while a timer runs or
-the pet walks. It's written in Rust and talks to X11 directly (no GTK, Qt or
-GPU). It only redraws when something visible changes, reuses cached animation
+the pet walks. It's written in Rust and talks to the windowing system directly
+(X11, Win32 or Cocoa; no GTK, Qt, Electron or GPU). It only redraws when something visible changes, reuses cached animation
 frames, and sleeps in between. The program is about 1.3 MB.
 
 ## Troubleshooting
@@ -153,6 +184,12 @@ frames, and sleeps in between. The program is about 1.3 MB.
 - **Wayland**: it runs through XWayland, but some Wayland compositors won't
   keep it on top or let it move itself. Mint's default Cinnamon session is
   X11, where everything works.
+- **Windows SmartScreen / macOS Gatekeeper warnings**: the downloads aren't
+  code-signed (that costs money every year). Use *More info → Run anyway* on
+  Windows, or *right-click → Open* on macOS.
+- **macOS is new**: it's built and checked by CI on every release but has had
+  less real-world use than Linux and Windows. Please open an issue if
+  something looks off.
 - **`.deb` won't install on an older Mint**: release builds need glibc 2.35
   (Mint 21 or newer). On older systems, build from source.
 
@@ -162,7 +199,7 @@ frames, and sleeps in between. The program is about 1.3 MB.
 src/
   main.rs       command line + event loop (sleeps on poll() until the next frame is due)
   app.rs        state: timers, moods, mouse, shaking, walking, speech, menu
-  platform.rs   X11: ARGB window, always-on-top hints, SHAPE input regions, popup menu
+  platform/     one backend per OS: x11.rs (Linux), win32.rs (Windows), macos.rs (Cocoa)
   render.rs     speech bubble + themes, menu, pet-frame cache, preview sheets
   pets/         the pets, as vector shapes in a 100x100 box (girl rig, cat, dog, ...)
   lines.rs      what each personality says
@@ -170,13 +207,14 @@ src/
   timer.rs      pomodoro / stopwatch state machines (unit tested)
   config.rs     settings, friendship, daily stats
   system.rs     notifications, sounds, autostart, --install, single instance
-scripts/build-deb.sh   packages the .deb (used by CI)
-get.sh                 the one-line installer
+scripts/              .deb and macOS .app packaging (used by CI)
+get.sh / get.ps1      one-line installers (Linux & macOS / Windows)
 ```
 
-Dependencies: [`x11rb`](https://crates.io/crates/x11rb) (a pure-Rust X11
-client) and [`tiny-skia`](https://crates.io/crates/tiny-skia) (a CPU 2D
-renderer). Run the tests with `cargo test`.
+Dependencies: [`tiny-skia`](https://crates.io/crates/tiny-skia) (a CPU 2D
+renderer) plus one per OS: [`x11rb`](https://crates.io/crates/x11rb),
+[`windows-sys`](https://crates.io/crates/windows-sys) or
+[`objc2`](https://crates.io/crates/objc2). Run the tests with `cargo test`.
 
 **Adding a pet**: add a file in `src/pets/` (or a new `Style` for the girl
 rig in `girl.rs`), register it in `pets/mod.rs` with a personality, then

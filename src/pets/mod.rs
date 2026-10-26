@@ -8,6 +8,7 @@ mod ghost;
 mod girl;
 mod robot;
 mod slime;
+mod tomato;
 
 use crate::gfx::{circle, ellipse, mix, rgb, rgba, shade, with_alpha, Canvas, P};
 use std::time::Duration;
@@ -64,6 +65,7 @@ pub enum Theme {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PetKind {
+    Tomo,
     Sakura,
     Yuki,
     Hikari,
@@ -80,7 +82,8 @@ pub enum PetKind {
     Bolt,
 }
 
-pub const ALL: [PetKind; 14] = [
+pub const ALL: [PetKind; 15] = [
+    PetKind::Tomo,
     PetKind::Sakura,
     PetKind::Yuki,
     PetKind::Hikari,
@@ -100,6 +103,7 @@ pub const ALL: [PetKind; 14] = [
 impl PetKind {
     pub fn name(self) -> &'static str {
         match self {
+            PetKind::Tomo => "tomo",
             PetKind::Sakura => "sakura",
             PetKind::Yuki => "yuki",
             PetKind::Hikari => "hikari",
@@ -119,6 +123,7 @@ impl PetKind {
 
     pub fn blurb(self) -> &'static str {
         match self {
+            PetKind::Tomo => "the Petodoro mascot: a little tomato",
             PetKind::Sakura => "pink twin-tails, sailor uniform",
             PetKind::Yuki => "silver hair, cat-ear hoodie",
             PetKind::Hikari => "blonde ponytail, maid outfit",
@@ -138,9 +143,13 @@ impl PetKind {
 
     pub fn persona(self) -> Persona {
         match self {
-            PetKind::Sakura | PetKind::Yuki | PetKind::Hikari | PetKind::Mochi | PetKind::Boo | PetKind::Bolt => {
-                Persona::Sweet
-            }
+            PetKind::Tomo
+            | PetKind::Sakura
+            | PetKind::Yuki
+            | PetKind::Hikari
+            | PetKind::Mochi
+            | PetKind::Boo
+            | PetKind::Bolt => Persona::Sweet,
             PetKind::Rin | PetKind::Lilith | PetKind::Kuro => Persona::Tsundere,
             PetKind::Akane | PetKind::Hinote => Persona::Angry,
             PetKind::Nemu => Persona::Sleepy,
@@ -165,6 +174,7 @@ impl PetKind {
             PetKind::Boo => (50.0, 57.0),
             PetKind::Hinote => (50.0, 75.0),
             PetKind::Bolt => (50.0, 54.0),
+            PetKind::Tomo => (50.0, 77.5),
             _ => (50.0, 57.5),
         }
     }
@@ -175,12 +185,6 @@ impl PetKind {
 
     pub fn from_name(s: &str) -> Option<PetKind> {
         ALL.iter().copied().find(|p| p.name().eq_ignore_ascii_case(s.trim()))
-    }
-
-    pub fn cycle(self, forward: bool) -> PetKind {
-        let i = ALL.iter().position(|p| *p == self).unwrap_or(0);
-        let n = ALL.len();
-        ALL[if forward { (i + 1) % n } else { (i + n - 1) % n }]
     }
 }
 
@@ -339,6 +343,7 @@ pub fn draw(cv: &mut Canvas, kind: PetKind, pose: &Pose) {
         cv.fill(&ellipse(50.0, 97.5, rx, (3.2 - l * 0.1).max(1.5)), rgba(0x000000, 0.16));
     }
     cv.with(body_transform(pose), |cv| match kind {
+        PetKind::Tomo => tomato::draw(cv, pose),
         PetKind::Sakura => girl::draw(cv, &girl::SAKURA, pose),
         PetKind::Yuki => girl::draw(cv, &girl::YUKI, pose),
         PetKind::Hikari => girl::draw(cv, &girl::HIKARI, pose),

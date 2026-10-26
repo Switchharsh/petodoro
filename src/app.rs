@@ -2,14 +2,13 @@
 
 use crate::config::{level, local_date, Config, Mode, SCALES};
 use crate::lines::{self, Event as Say};
-use crate::pets::{Mood, Persona, Pose};
-use crate::platform::{Res, Surface, X};
+use crate::pets::{Mood, Persona, PetKind, Pose};
+use crate::platform::{Display, Res, Surface, WinEvent};
 use crate::render::{self, Bubble, MenuView, Scene};
 use crate::system;
 use crate::timer::{format_clock, Phase, Pomodoro, Stopwatch};
 use std::time::{Duration, Instant};
 use tiny_skia::Pixmap;
-use x11rb::protocol::Event;
 
 const DRAG_THRESHOLD: i32 = 4;
 const CHEER_FOR: Duration = Duration::from_millis(3500);
@@ -38,7 +37,7 @@ enum Action {
     Snack,
     Stats,
     Mode,
-    Pet,
+    Pet(PetKind),
     Size,
     Theme,
     Focus,
@@ -50,6 +49,15 @@ enum Action {
     Sound,
     Autostart,
     Quit,
+    Page(Page),
+}
+
+/// Which page of the right-click menu is showing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Main,
+    Settings,
+    Pets,
 }
 
 impl Action {
@@ -60,6 +68,7 @@ impl Action {
 }
 
 struct Menu {
+    page: Page,
     surf: Surface,
     pm: Pixmap,
     view: MenuView,
@@ -113,7 +122,7 @@ struct Walk {
 }
 
 pub struct App {
-    pub x: X,
+    pub dpy: Display,
     surf: Surface,
     pm: Pixmap,
     pets: render::PetCache,
@@ -168,17 +177,17 @@ fn secs(n: u64) -> Duration {
 }
 
 impl App {
-    pub fn new(x: X, cfg: Config) -> Res<App> {
+    pub fn new(dpy: Display, cfg: Config) -> Res<App> {
         let (w, h) = render::window_size(cfg.scale);
-        let default = (x.screen_w - w as i32 - 60, x.screen_h - h as i32 - 90);
-        let pos = clamp_pos(&x, cfg.pos.unwrap_or(default), w, h);
-        let surf = x.create_pet_window(pos.0, pos.1, w, h)?;
+        let default = (dpy.work.right() - w as i32 - 60, dpy.work.bottom() - h as i32 - 40);
+        let pos = clamp_pos(&dpy, cfg.pos.unwrap_or(default), w, h);
+        let surf = dpy.create_pet_window(pos.0, pos.1, w, h)?;
         let now = Instant::now();
         let mut app = App {
             pm: Pixmap::new(w as u32, h as u32).ok_or("bad window size")?,
             pets: render::PetCache::default(),
             surf,
-            x,
+            dpy,
             pomo: Pomodoro::new(&cfg.pomo),
             sw: Stopwatch::default(),
             cfg,
@@ -244,64 +253,54 @@ impl App {
 
     // ------------------------------------------------------------ events
 
-    pub fn handle(&mut self, ev: Event) -> Res<()> {
-        let menu_win = self.menu.as_ref().map(|m| m.surf.win);
+    pub fn handle(&mut self, ev: WinEvent) -> Res<()> {
+        let menu_win = self.menu.as_ref().map(|m| m.surf.id());
+        let pet_win = self.surf.id();
         match ev {
-            Event::Expose(e) if Some(e.window) == menu_win => self.menu.as_mut().unwrap().dirty = true,
-            Event::Expose(_) => self.dirty = true,
-            Event::ButtonPress(e) if Some(e.event) == menu_win => {
-                self.menu_press(e.event_x as i32, e.event_y as i32)?
-            }
-            Event::ButtonRelease(e) if Some(e.event) == menu_win => {
-                self.menu_release(e.event_x as i32, e.event_y as i32, e.detail)?
-            }
-            Event::MotionNotify(e) if Some(e.event) == menu_win => self.menu_motion(e.event_x as i32, e.event_y as i32),
-            Event::ButtonPress(e) if e.event == self.surf.win => {
+            WinEvent::Expose(w) if Some(w) == menu_win => self.menu.as_mut().unwrap().dirty = true,
+            WinEvent::Expose(_) => self.dirty = true,
+            WinEvent::FocusLost(w) if Some(w) == menu_win => self.close_menu()?,
+            WinEvent::Press { win, x, y, .. } if Some(win) == menu_win => self.menu_press(x, y)?,
+            WinEvent::Release { win, button, x, y, .. } if Some(win) == menu_win => self.menu_release(x, y, button)?,
+            WinEvent::Motion { win, x, y, .. } if Some(win) == menu_win => self.menu_motion(x, y),
+            WinEvent::Press { win, button, x, y, rx, ry } if win == pet_win => {
                 let now = Instant::now();
-                match e.detail {
+                match button {
                     1 => {
                         self.end_walk();
-                        self.press = Some(Press {
-                            root: (e.root_x as i32, e.root_y as i32),
-                            win_origin: (e.root_x as i32 - e.event_x as i32, e.root_y as i32 - e.event_y as i32),
-                        });
-                        self.shake = Shake { extreme: e.root_x as i32, ..Shake::default() };
+                        self.press = Some(Press { root: (rx, ry), win_origin: (rx - x, ry - y) });
+                        self.shake = Shake { extreme: rx, ..Shake::default() };
                     }
                     2 => self.act(Action::Reset, true)?,
-                    3 => self.open_menu(e.root_x as i32, e.root_y as i32)?,
-                    4 | 5 => self.scroll(e.detail == 4),
+                    3 => self.open_menu(rx, ry)?,
+                    4 | 5 => self.scroll(button == 4),
                     _ => {}
                 }
                 self.last_activity = now;
             }
-            Event::MotionNotify(e) if e.event == self.surf.win => {
+            WinEvent::Motion { win, rx, ry, .. } if win == pet_win => {
                 if let Some(p) = &self.press {
-                    let (dx, dy) = (e.root_x as i32 - p.root.0, e.root_y as i32 - p.root.1);
+                    let (dx, dy) = (rx - p.root.0, ry - p.root.1);
                     if !self.dragging && dx.abs().max(dy.abs()) > DRAG_THRESHOLD {
                         self.dragging = true;
                     }
                     if self.dragging {
                         self.pos = (p.win_origin.0 + dx, p.win_origin.1 + dy);
-                        self.x.move_window(&self.surf, self.pos.0, self.pos.1)?;
-                        self.shake.track(e.root_x as i32, Instant::now());
+                        self.dpy.move_window(&self.surf, self.pos.0, self.pos.1)?;
+                        self.shake.track(rx, Instant::now());
                     }
                 }
             }
-            Event::ButtonRelease(e) if e.event == self.surf.win && e.detail == 1 => {
+            WinEvent::Release { win, button: 1, x, y, .. } if win == pet_win => {
                 if self.press.take().is_some() {
                     if self.dragging {
                         self.drop_pet()?;
                     } else {
-                        self.click(e.event_x as i32, e.event_y as i32);
+                        self.click(x, y);
                     }
                 }
             }
-            Event::ClientMessage(e) => {
-                let a = &self.x.atoms;
-                if e.type_ == a.WM_PROTOCOLS && e.format == 32 && e.data.as_data32()[0] == a.WM_DELETE_WINDOW {
-                    self.quit = true;
-                }
-            }
+            WinEvent::Close => self.quit = true,
             _ => {}
         }
         Ok(())
@@ -310,10 +309,10 @@ impl App {
     fn drop_pet(&mut self) -> Res<()> {
         let now = Instant::now();
         self.dragging = false;
-        let clamped = clamp_pos(&self.x, self.pos, self.surf.w, self.surf.h);
+        let clamped = clamp_pos(&self.dpy, self.pos, self.surf.w, self.surf.h);
         if clamped != self.pos {
             self.pos = clamped;
-            self.x.move_window(&self.surf, clamped.0, clamped.1)?;
+            self.dpy.move_window(&self.surf, clamped.0, clamped.1)?;
         }
         self.cfg.pos = Some(self.pos);
         self.cfg.save();
@@ -417,10 +416,19 @@ impl App {
             Action::Snack => self.snack(now),
             Action::Stats => {}
             Action::Mode => self.cfg.mode = self.cfg.mode.next(),
-            Action::Pet => {
-                self.cfg.pet = self.cfg.pet.cycle(forward);
-                self.love_until = Some(now + LOVE_FOR);
-                self.say_event(Say::Hello, now);
+            Action::Pet(pet) => {
+                if pet != self.cfg.pet {
+                    self.cfg.pet = pet;
+                    self.walk = None;
+                    self.love_until = Some(now + LOVE_FOR);
+                    self.say_event(Say::Hello, now);
+                }
+            }
+            Action::Page(page) => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.page = page;
+                    m.view.hover = None;
+                }
             }
             Action::Size => {
                 let i = SCALES.iter().position(|(s, _)| *s >= self.cfg.scale).unwrap_or(0);
@@ -460,10 +468,10 @@ impl App {
         // Keep the pet's feet where they were.
         let x = self.pos.0 + (self.surf.w as i32 - w as i32) / 2;
         let y = self.pos.1 + self.surf.h as i32 - h as i32;
-        self.pos = clamp_pos(&self.x, (x, y), w, h);
+        self.pos = clamp_pos(&self.dpy, (x, y), w, h);
         self.cfg.scale = scale;
         self.cfg.pos = Some(self.pos);
-        self.x.move_resize(&mut self.surf, self.pos.0, self.pos.1, w, h)?;
+        self.dpy.move_resize(&mut self.surf, self.pos.0, self.pos.1, w, h)?;
         self.pm = Pixmap::new(w as u32, h as u32).ok_or("bad window size")?;
         self.dirty = true;
         Ok(())
@@ -471,73 +479,86 @@ impl App {
 
     // -------------------------------------------------------------- menu
 
-    fn menu_items(&self) -> (Vec<(String, bool)>, Vec<Action>) {
+    fn menu_items(&self, page: Page) -> (Vec<(String, bool)>, Vec<Action>) {
         let c = &self.cfg;
         let on_off = |b: bool| if b { "ON" } else { "OFF" };
         let mut items: Vec<(String, bool, Action)> = vec![];
-        match c.mode {
-            Mode::Pomodoro => {
-                let p = &self.pomo;
-                let what = if p.phase.is_break() { "BREAK" } else { "FOCUS" };
-                let toggle = if p.is_running() {
-                    "PAUSE".to_string()
-                } else if p.is_fresh(&c.pomo) {
-                    format!("START {what}")
-                } else {
-                    "RESUME".to_string()
+        match page {
+            Page::Main => {
+                match c.mode {
+                    Mode::Pomodoro => {
+                        let p = &self.pomo;
+                        let what = if p.phase.is_break() { "BREAK" } else { "FOCUS" };
+                        let toggle = if p.is_running() {
+                            "PAUSE".to_string()
+                        } else if p.is_fresh(&c.pomo) {
+                            format!("START {what}")
+                        } else {
+                            "RESUME".to_string()
+                        };
+                        items.push((toggle, false, Action::Toggle));
+                        items.push(("RESET".into(), false, Action::Reset));
+                        let skip = if p.phase.is_break() { "SKIP TO FOCUS" } else { "SKIP TO BREAK" };
+                        items.push((skip.into(), false, Action::Skip));
+                    }
+                    Mode::Stopwatch => {
+                        let toggle = if self.sw.is_running() {
+                            "PAUSE"
+                        } else if self.sw.elapsed(Instant::now()).is_zero() {
+                            "START"
+                        } else {
+                            "RESUME"
+                        };
+                        items.push((toggle.into(), false, Action::Toggle));
+                        items.push(("RESET".into(), false, Action::Reset));
+                    }
+                    Mode::PetOnly => {}
+                }
+                let first = items.is_empty();
+                items.push(("CHOOSE PET >".into(), !first, Action::Page(Page::Pets)));
+                items.push(("GIVE A SNACK ♥".into(), false, Action::Snack));
+                let mode = match c.mode {
+                    Mode::Pomodoro => "POMODORO",
+                    Mode::Stopwatch => "STOPWATCH",
+                    Mode::PetOnly => "JUST PET",
                 };
-                items.push((toggle, false, Action::Toggle));
-                items.push(("RESET".into(), false, Action::Reset));
-                let skip = if p.phase.is_break() { "SKIP TO FOCUS" } else { "SKIP TO BREAK" };
-                items.push((skip.into(), false, Action::Skip));
+                items.push((format!("MODE: {mode}"), false, Action::Mode));
+                let size = SCALES.iter().find(|(s, _)| *s >= c.scale).map_or("M", |(_, n)| n);
+                items.push((format!("SIZE: {size}"), false, Action::Size));
+                items.push(("SETTINGS >".into(), true, Action::Page(Page::Settings)));
+                items.push(("QUIT".into(), false, Action::Quit));
             }
-            Mode::Stopwatch => {
-                let toggle = if self.sw.is_running() {
-                    "PAUSE"
-                } else if self.sw.elapsed(Instant::now()).is_zero() {
-                    "START"
-                } else {
-                    "RESUME"
-                };
-                items.push((toggle.into(), false, Action::Toggle));
-                items.push(("RESET".into(), false, Action::Reset));
+            Page::Settings => {
+                items.push(("< BACK".into(), false, Action::Page(Page::Main)));
+                let today = &c.today;
+                let stats = format!("TODAY: {} POMS, {} MIN", today.pomodoros, today.focus_minutes);
+                items.push((stats, true, Action::Stats));
+                items.push((format!("THEME: {}", c.theme.name().to_uppercase()), true, Action::Theme));
+                items.push((format!("FOCUS: {} MIN", c.pomo.focus_min), false, Action::Focus));
+                items.push((format!("BREAK: {} MIN", c.pomo.short_min), false, Action::ShortBreak));
+                items.push((format!("LONG BREAK: {} MIN", c.pomo.long_min), false, Action::LongBreak));
+                items.push((format!("AUTO-START NEXT: {}", on_off(c.pomo.auto_continue)), false, Action::Auto));
+                items.push((format!("WALK AROUND: {}", on_off(c.wander)), true, Action::Wander));
+                items.push((format!("CHATTER: {}", on_off(c.chatter)), false, Action::Chatter));
+                items.push((format!("SOUND: {}", on_off(c.sound)), false, Action::Sound));
+                let login = on_off(system::autostart_enabled());
+                items.push((format!("START ON LOGIN: {login}"), false, Action::Autostart));
             }
-            Mode::PetOnly => {}
+            Page::Pets => {
+                items.push(("< BACK".into(), false, Action::Page(Page::Main)));
+            }
         }
-        let first = items.is_empty();
-        items.push(("GIVE A SNACK ♥".into(), !first, Action::Snack));
-        let today = &c.today;
-        items.push((format!("TODAY: {} POMS, {} MIN", today.pomodoros, today.focus_minutes), false, Action::Stats));
-
-        let mode = match c.mode {
-            Mode::Pomodoro => "POMODORO",
-            Mode::Stopwatch => "STOPWATCH",
-            Mode::PetOnly => "JUST PET",
-        };
-        items.push((format!("MODE: {mode}"), true, Action::Mode));
-        let pet = format!("PET: {} ({})", c.pet.name(), c.pet.persona().name()).to_uppercase();
-        items.push((pet, false, Action::Pet));
-        let size = SCALES.iter().find(|(s, _)| *s >= c.scale).map_or("M", |(_, n)| n);
-        items.push((format!("SIZE: {size}"), false, Action::Size));
-        items.push((format!("THEME: {}", c.theme.name().to_uppercase()), false, Action::Theme));
-        if c.mode == Mode::Pomodoro {
-            items.push((format!("FOCUS: {} MIN", c.pomo.focus_min), true, Action::Focus));
-            items.push((format!("BREAK: {} MIN", c.pomo.short_min), false, Action::ShortBreak));
-            items.push((format!("LONG BREAK: {} MIN", c.pomo.long_min), false, Action::LongBreak));
-            items.push((format!("AUTO-START NEXT: {}", on_off(c.pomo.auto_continue)), false, Action::Auto));
+        let mut actions: Vec<Action> = items.iter().map(|i| i.2).collect();
+        if page == Page::Pets {
+            actions.extend(crate::pets::ALL.iter().map(|&p| Action::Pet(p)));
         }
-        items.push((format!("WALK AROUND: {}", on_off(c.wander)), true, Action::Wander));
-        items.push((format!("CHATTER: {}", on_off(c.chatter)), false, Action::Chatter));
-        items.push((format!("SOUND: {}", on_off(c.sound)), false, Action::Sound));
-        items.push((format!("START ON LOGIN: {}", on_off(system::autostart_enabled())), false, Action::Autostart));
-        items.push(("QUIT".into(), true, Action::Quit));
-        let actions = items.iter().map(|i| i.2).collect();
         (items.into_iter().map(|(l, s, _)| (l, s)).collect(), actions)
     }
 
     fn menu_title(&self) -> String {
         let lv = level(self.cfg.friendship(self.cfg.pet));
-        format!("{}  LV {lv} ♥", self.cfg.pet.name().to_uppercase())
+        let persona = self.cfg.pet.persona().name();
+        format!("{} ({persona})  LV {lv} ♥", self.cfg.pet.name()).to_uppercase()
     }
 
     fn accent(&self) -> u32 {
@@ -553,26 +574,43 @@ impl App {
     }
 
     fn menu_origin(&self, rx: i32, ry: i32, w: u16, h: u16) -> (i32, i32) {
-        let x = if rx + w as i32 > self.x.screen_w { rx - w as i32 } else { rx + 1 };
-        let y = if ry + h as i32 > self.x.screen_h { (ry - h as i32).max(0) } else { ry + 1 };
-        (x.max(0), y)
+        let sc = self.dpy.screen;
+        let x = if rx + w as i32 > sc.right() { rx - w as i32 } else { rx + 1 };
+        let y = if ry + h as i32 > sc.bottom() { (ry - h as i32).max(sc.y) } else { ry + 1 };
+        (x.max(sc.x), y)
+    }
+
+    fn menu_view(&self, page: Page) -> (MenuView, Vec<Action>) {
+        let (items, actions) = self.menu_items(page);
+        let p = render::menu_font(self.cfg.scale);
+        let grid = if page == Page::Pets { render::pet_icons(MenuView::icon_size(p)) } else { vec![] };
+        let title = match page {
+            Page::Main => self.menu_title(),
+            Page::Settings => "SETTINGS".into(),
+            Page::Pets => "CHOOSE A PET".into(),
+        };
+        let view = MenuView {
+            title,
+            items,
+            grid,
+            current: Some(self.cfg.pet),
+            hover: None,
+            accent: self.accent(),
+            theme: self.cfg.theme.resolve(self.cfg.pet),
+            p,
+        };
+        (view, actions)
     }
 
     fn open_menu(&mut self, rx: i32, ry: i32) -> Res<()> {
         self.close_menu()?;
         self.end_walk();
-        let (items, actions) = self.menu_items();
-        let view = MenuView {
-            title: self.menu_title(),
-            items,
-            hover: None,
-            accent: self.accent(),
-            theme: self.cfg.theme.resolve(self.cfg.pet),
-        };
+        let (view, actions) = self.menu_view(Page::Main);
         let (w, h) = render::menu_size(&view);
         let (x, y) = self.menu_origin(rx, ry, w, h);
-        let surf = self.x.create_menu_window(x, y, w, h)?;
+        let surf = self.dpy.create_menu_window(x, y, w, h)?;
         self.menu = Some(Menu {
+            page: Page::Main,
             surf,
             pm: Pixmap::new(w as u32, h as u32).ok_or("bad menu size")?,
             view,
@@ -587,28 +625,31 @@ impl App {
 
     fn close_menu(&mut self) -> Res<()> {
         if let Some(m) = self.menu.take() {
-            self.x.destroy(m.surf)?;
+            self.dpy.destroy(m.surf)?;
         }
         Ok(())
     }
 
     fn refresh_menu(&mut self) -> Res<()> {
-        let (items, actions) = self.menu_items();
-        let (title, accent, theme) = (self.menu_title(), self.accent(), self.cfg.theme.resolve(self.cfg.pet));
-        let Some(m) = self.menu.as_mut() else { return Ok(()) };
-        m.view.items = items;
-        m.view.title = title;
-        m.view.accent = accent;
-        m.view.theme = theme;
+        let Some(page) = self.menu.as_ref().map(|m| m.page) else { return Ok(()) };
+        let (mut view, actions) = self.menu_view(page);
+        let sc = self.dpy.screen;
+        let m = self.menu.as_mut().unwrap();
+        view.hover = m.view.hover;
+        if page == Page::Pets && m.view.grid.len() == view.grid.len() {
+            // Keep the already rendered portraits.
+            view.grid = std::mem::take(&mut m.view.grid);
+        }
+        m.view = view;
         m.actions = actions;
         m.dirty = true;
         let (w, h) = render::menu_size(&m.view);
         if (w, h) != (m.surf.w, m.surf.h) {
             // Keep it on screen if it grew.
-            let x = m.at.0.min(self.x.screen_w - w as i32).max(0);
-            let y = m.at.1.min(self.x.screen_h - h as i32).max(0);
+            let x = m.at.0.min(sc.right() - w as i32).max(sc.x);
+            let y = m.at.1.min(sc.bottom() - h as i32).max(sc.y);
             m.at = (x, y);
-            self.x.move_resize(&mut m.surf, x, y, w, h)?;
+            self.dpy.move_resize(&mut m.surf, x, y, w, h)?;
             m.pm = Pixmap::new(w as u32, h as u32).ok_or("bad menu size")?;
         }
         Ok(())
@@ -678,11 +719,11 @@ impl App {
     }
 
     fn start_walk(&mut self, now: Instant) {
-        let max_x = self.x.screen_w - self.surf.w as i32;
+        let (min_x, max_x) = (self.dpy.screen.x, self.dpy.screen.right() - self.surf.w as i32);
         let dist = (40 + self.rand() % 160) as f32 * self.cfg.scale / 1.5;
         let mut dir = if self.rand() % 2 == 0 { 1 } else { -1 };
         // Head back toward the middle when near an edge.
-        if self.pos.0 < 80 {
+        if self.pos.0 < min_x + 80 {
             dir = 1;
         } else if self.pos.0 > max_x - 80 {
             dir = -1;
@@ -699,22 +740,23 @@ impl App {
 
     fn step_walk(&mut self, now: Instant) -> Res<()> {
         let speed = self.walk_speed();
-        let max_x = (self.x.screen_w - self.surf.w as i32) as f32;
+        let min_x = self.dpy.screen.x as f32;
+        let max_x = (self.dpy.screen.right() - self.surf.w as i32) as f32;
         let Some(w) = self.walk.as_mut() else { return Ok(()) };
         let dt = now.duration_since(w.last).as_secs_f32().min(0.2);
         w.last = now;
         let d = speed * dt;
         w.x += w.dir as f32 * d;
         w.left -= d;
-        if w.x <= 0.0 || w.x >= max_x {
-            w.x = w.x.clamp(0.0, max_x.max(0.0));
+        if w.x <= min_x || w.x >= max_x {
+            w.x = w.x.clamp(min_x, max_x.max(min_x));
             w.left = 0.0;
         }
         let nx = w.x.round() as i32;
         let done = w.left <= 0.0;
         if nx != self.pos.0 {
             self.pos.0 = nx;
-            self.x.move_window(&self.surf, self.pos.0, self.pos.1)?;
+            self.dpy.move_window(&self.surf, self.pos.0, self.pos.1)?;
         }
         if done {
             self.end_walk();
@@ -786,7 +828,7 @@ impl App {
             system::notify(title, &body);
         }
         if self.cfg.sound && !system::chime() {
-            self.x.bell();
+            self.dpy.bell();
         }
         self.cheer_until = Some(now + CHEER_FOR);
         self.say_event(if done == Phase::Focus { Say::FocusDone } else { Say::BreakDone }, now);
@@ -915,13 +957,13 @@ impl App {
         let scene = Scene { scale: self.cfg.scale, pet: self.cfg.pet, pose: self.pose(now), bubble: self.bubble(now) };
         if self.dirty || self.last_scene.as_ref() != Some(&scene) {
             render::draw_scene(&mut self.pm, &scene, &mut self.pets);
-            self.x.present(&mut self.surf, &self.pm)?;
+            self.dpy.present(&mut self.surf, &self.pm)?;
             self.last_scene = Some(scene);
             self.dirty = false;
         }
         if let Some(m) = self.menu.as_mut().filter(|m| m.dirty) {
             render::draw_menu(&mut m.pm, &m.view);
-            self.x.present(&mut m.surf, &m.pm)?;
+            self.dpy.present(&mut m.surf, &m.pm)?;
             m.dirty = false;
         }
         Ok(())
@@ -973,10 +1015,10 @@ impl App {
 }
 
 /// Keep at least part of the window on screen so the pet can't get lost.
-fn clamp_pos(x: &X, (px, py): (i32, i32), w: u16, h: u16) -> (i32, i32) {
-    let (w, h) = (w as i32, h as i32);
+fn clamp_pos(dpy: &Display, (px, py): (i32, i32), w: u16, h: u16) -> (i32, i32) {
+    let (w, h, sc) = (w as i32, h as i32, dpy.screen);
     let keep = 48;
-    (px.clamp(keep - w, x.screen_w - keep), py.clamp(-h / 2, x.screen_h - keep))
+    (px.clamp(sc.x + keep - w, sc.right() - keep), py.clamp(sc.y - h / 2, sc.bottom() - keep))
 }
 
 #[cfg(test)]

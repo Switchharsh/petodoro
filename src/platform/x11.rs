@@ -1,8 +1,9 @@
 //! Raw X11 plumbing: an always-on-top, undecorated, per-pixel transparent
 //! window (32-bit ARGB visual) plus an override-redirect popup for the menu.
 
-use std::error::Error;
-use std::os::unix::io::{AsRawFd, RawFd};
+use super::{Bounds, Res, WinEvent, WinId};
+use std::os::unix::io::AsRawFd;
+use std::time::Duration;
 
 use tiny_skia::Pixmap;
 use x11rb::connection::{Connection, RequestConnection};
@@ -11,8 +12,6 @@ use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
-
-pub type Res<T> = Result<T, Box<dyn Error>>;
 
 x11rb::atom_manager! {
     pub Atoms: AtomsCookie {
@@ -32,12 +31,14 @@ x11rb::atom_manager! {
     }
 }
 
-pub struct X {
-    pub conn: RustConnection,
-    pub root: Window,
-    pub atoms: Atoms,
-    pub screen_w: i32,
-    pub screen_h: i32,
+pub struct Display {
+    conn: RustConnection,
+    root: Window,
+    atoms: Atoms,
+    /// The whole screen (all monitors).
+    pub screen: Bounds,
+    /// Where the pet starts by default (same as `screen` on X11).
+    pub work: Bounds,
     depth: u8,
     visual: Visualid,
     colormap: Colormap,
@@ -48,7 +49,7 @@ pub struct X {
 }
 
 pub struct Surface {
-    pub win: Window,
+    win: Window,
     gc: Gcontext,
     pub w: u16,
     pub h: u16,
@@ -57,8 +58,14 @@ pub struct Surface {
     buf: Vec<u8>,
 }
 
-impl X {
-    pub fn connect() -> Res<X> {
+impl Surface {
+    pub fn id(&self) -> WinId {
+        self.win as WinId
+    }
+}
+
+impl Display {
+    pub fn connect() -> Res<Display> {
         let (conn, screen_num) = x11rb::connect(None)?;
         let atoms = Atoms::new(&conn)?.reply()?;
         let screen = conn.setup().roots[screen_num].clone();
@@ -82,10 +89,11 @@ impl X {
         let composited = depth == 32 && conn.get_selection_owner(cm_atom)?.reply()?.owner != x11rb::NONE;
         let has_shape = conn.extension_information(shape::X11_EXTENSION_NAME)?.is_some();
 
-        Ok(X {
+        let screen_bounds = Bounds { x: 0, y: 0, w: screen.width_in_pixels as i32, h: screen.height_in_pixels as i32 };
+        Ok(Display {
             root: screen.root,
-            screen_w: screen.width_in_pixels as i32,
-            screen_h: screen.height_in_pixels as i32,
+            screen: screen_bounds,
+            work: screen_bounds,
             conn,
             atoms,
             depth,
@@ -96,8 +104,58 @@ impl X {
         })
     }
 
-    pub fn fd(&self) -> RawFd {
-        self.conn.stream().as_raw_fd()
+    /// Next pending event, without blocking.
+    pub fn poll(&self) -> Res<Option<WinEvent>> {
+        use x11rb::protocol::Event;
+        while let Some(ev) = self.conn.poll_for_event()? {
+            let out = match ev {
+                Event::Expose(e) => WinEvent::Expose(e.window as WinId),
+                Event::ButtonPress(e) => WinEvent::Press {
+                    win: e.event as WinId,
+                    button: e.detail,
+                    x: e.event_x as i32,
+                    y: e.event_y as i32,
+                    rx: e.root_x as i32,
+                    ry: e.root_y as i32,
+                },
+                Event::ButtonRelease(e) => WinEvent::Release {
+                    win: e.event as WinId,
+                    button: e.detail,
+                    x: e.event_x as i32,
+                    y: e.event_y as i32,
+                    rx: e.root_x as i32,
+                    ry: e.root_y as i32,
+                },
+                Event::MotionNotify(e) => WinEvent::Motion {
+                    win: e.event as WinId,
+                    x: e.event_x as i32,
+                    y: e.event_y as i32,
+                    rx: e.root_x as i32,
+                    ry: e.root_y as i32,
+                },
+                Event::ClientMessage(e)
+                    if e.type_ == self.atoms.WM_PROTOCOLS
+                        && e.format == 32
+                        && e.data.as_data32()[0] == self.atoms.WM_DELETE_WINDOW =>
+                {
+                    WinEvent::Close
+                }
+                _ => continue,
+            };
+            return Ok(Some(out));
+        }
+        Ok(None)
+    }
+
+    pub fn flush(&self) -> Res<()> {
+        self.conn.flush()?;
+        Ok(())
+    }
+
+    /// Sleep until the X server has something for us or `timeout` passes.
+    pub fn wait(&self, timeout: Duration) {
+        let mut pfd = libc::pollfd { fd: self.conn.stream().as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        unsafe { libc::poll(&mut pfd, 1, timeout.as_millis().clamp(1, 60_000) as i32) };
     }
 
     fn create(&self, x: i32, y: i32, w: u16, h: u16, override_redirect: bool, events: EventMask) -> Res<Surface> {

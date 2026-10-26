@@ -110,7 +110,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            pet: PetKind::Sakura,
+            pet: PetKind::Tomo,
             mode: Mode::Pomodoro,
             scale: 1.5,
             pos: None,
@@ -127,7 +127,17 @@ impl Default for Config {
     }
 }
 
+/// Where settings live: ~/.config on Linux, %APPDATA% on Windows,
+/// ~/Library/Application Support on macOS.
 pub fn config_dir() -> PathBuf {
+    #[cfg(windows)]
+    if let Some(d) = std::env::var_os("APPDATA") {
+        return PathBuf::from(d);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(h) = std::env::var_os("HOME") {
+        return PathBuf::from(h).join("Library").join("Application Support");
+    }
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
@@ -264,12 +274,7 @@ impl Config {
 
 /// Today's local date as YYYY-MM-DD.
 pub fn local_date() -> String {
-    unsafe {
-        let t = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&t, &mut tm);
-        format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
-    }
+    crate::system::local_date()
 }
 
 #[cfg(test)]
