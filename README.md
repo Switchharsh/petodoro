@@ -40,8 +40,8 @@ needed), and runs `petodoro --install`.
 Remove it with `petodoro --uninstall`, `./uninstall.sh` (add `--purge` to also
 delete settings), or `sudo apt remove petodoro` if you used the `.deb`.
 
-> Releases are built automatically by CI whenever a `v*` tag is pushed
-> (for example `git tag v0.2.1 && git push --tags`).
+> Releases are built automatically by CI: every push to the default branch
+> publishes the version in `Cargo.toml`. Bump that version to start a new release.
 
 ## The pets
 
