@@ -9,7 +9,7 @@ rust-version = "1.75"
 
 [dependencies]
 # CPU 2D rasterizer used to draw the pets.
-tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 libc = "0.2"
 
 # Linux / BSD: pure-Rust X11 client, no libX11 / -dev packages needed to build.
