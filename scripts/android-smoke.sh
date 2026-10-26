@@ -7,7 +7,20 @@ apk="$1"
 out="$2"
 pkg=io.github.switchharsh.petodoro
 mkdir -p "$out"
-shot() { adb exec-out screencap -p > "$out/$1.png"; }
+# Save a screenshot, and also print a small JPEG of it (base64) plus the
+# app's state into the log, so it can be checked without the artifact.
+shot() {
+    adb exec-out screencap -p > "$out/$1.png"
+    set +x
+    echo "STATE $1: pid=$(adb shell pidof "$pkg" | tr -d '\r') overlays=$(adb shell dumpsys window windows | grep -c "$pkg")"
+    if command -v ffmpeg >/dev/null; then
+        ffmpeg -loglevel error -y -i "$out/$1.png" -vf scale=300:-1 -q:v 7 "$out/$1.jpg"
+        echo "BEGIN-SHOT $1"
+        base64 -w 100 "$out/$1.jpg"
+        echo "END-SHOT $1"
+    fi
+    set -x
+}
 
 adb install -r "$apk"
 adb shell appops set "$pkg" SYSTEM_ALERT_WINDOW allow
@@ -36,7 +49,8 @@ adb shell input swipe "$px" "$py" "$px" "$py" 1500   # long press: menu
 sleep 3
 shot 4-menu
 adb shell input keyevent KEYCODE_BACK
-adb shell input swipe "$px" "$py" "$((px - 300))" "$((py - 500))" 800   # drag the pet
+tx=$((px > 350 ? px - 300 : 50)); ty=$((py > 650 ? py - 600 : 50))
+adb shell input swipe "$px" "$py" "$tx" "$ty" 800   # drag the pet
 sleep 3
 shot 5-dragged
 adb shell pidof "$pkg" > "$out/pid.txt" || echo "NOT RUNNING" > "$out/pid.txt"
