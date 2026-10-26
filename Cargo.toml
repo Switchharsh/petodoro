@@ -14,7 +14,7 @@ libc = "0.2"
 
 # Linux / BSD: pure-Rust X11 client, no libX11 / -dev packages needed to build.
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
-x11rb = { version = "0.13", features = ["shape"] }
+x11rb = { version = "0.14", features = ["shape"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
