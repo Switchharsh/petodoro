@@ -29,17 +29,28 @@ jobs:
           cp target/release/petodoro README.md LICENSE install.sh uninstall.sh dist/petodoro/
           tar -C dist -czf petodoro-x86_64-linux.tar.gz petodoro
           version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
-          scripts/build-deb.sh target/release/petodoro "$version" .
+          deb="$(scripts/build-deb.sh target/release/petodoro "$version" .)"
+          # Fixed name so README links to releases/latest/download/ always work.
+          mv "$deb" petodoro-amd64.deb
       - uses: actions/upload-artifact@v4
         with:
           name: petodoro-x86_64-linux
           path: |
             petodoro-x86_64-linux.tar.gz
-            petodoro_*_amd64.deb
+            petodoro-amd64.deb
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: Petodoro ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Download
+            - **Linux Mint 21+ / Ubuntu 22.04+:** download `petodoro-amd64.deb`, double-click it and press *Install Package*. Then open **Petodoro** from the app menu.
+            - **Any x86_64 Linux:** download `petodoro-x86_64-linux.tar.gz`, unpack it and run `./petodoro` (or `./petodoro --install` to add it to the app menu and start it on login).
+            - **One command:** `curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash`
+
+            Right-click the pet for the menu: pets, pomodoro / stopwatch, themes and more.
           files: |
             petodoro-x86_64-linux.tar.gz
-            petodoro_*_amd64.deb
+            petodoro-amd64.deb

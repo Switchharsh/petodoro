@@ -1,5 +1,10 @@
 # Petodoro 🍅
 
+[![Download .deb](https://img.shields.io/badge/Download-.deb%20for%20Linux%20Mint-ff5c8a?style=for-the-badge&logo=linuxmint&logoColor=white)](https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-amd64.deb)
+[![Download tar.gz](https://img.shields.io/badge/Download-portable%20tar.gz-8a63d2?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-x86_64-linux.tar.gz)
+[![Latest release](https://img.shields.io/github/v/release/Switchharsh/petodoro?style=for-the-badge&label=latest&color=3fae6a)](https://github.com/Switchharsh/petodoro/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Switchharsh/petodoro/ci.yml?style=for-the-badge&label=build)](https://github.com/Switchharsh/petodoro/actions/workflows/ci.yml)
+
 A tiny desktop pet that floats on your screen and keeps you company with a
 **pomodoro timer** and a **stopwatch**. Pick it up, drop it anywhere, pat it,
 feed it, shake it (it gets dizzy), and watch it wander around. Made for Linux
@@ -9,8 +14,9 @@ Mint (and any other X11 desktop). Uses about 5 MB of RAM and almost no CPU.
 
 ## Install: pick the easiest one for you
 
-**1. Double-click a `.deb` (easiest).** Download `petodoro_*_amd64.deb` from the
-[Releases page](https://github.com/Switchharsh/petodoro/releases), double-click
+**1. Double-click a `.deb` (easiest).** Click the pink **Download .deb**
+button above (or grab `petodoro-amd64.deb` from the
+[Releases page](https://github.com/Switchharsh/petodoro/releases/latest)), double-click
 it, press *Install Package*, then open **Petodoro** from the app menu. To
 start it on every login, right-click the pet → *START ON LOGIN*.
 
@@ -21,7 +27,7 @@ an app-menu entry, starts on login, and launches the pet:
 curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash
 ```
 
-**3. Just the program.** Download `petodoro-x86_64-linux.tar.gz` from Releases,
+**3. Just the program.** Click **Download portable tar.gz** above,
 unpack it, and run `./petodoro`. That's the whole app; nothing else is
 needed. `./petodoro --install` copies it into your home folder and sets up
 the app menu and autostart for you.
@@ -34,10 +40,8 @@ needed), and runs `petodoro --install`.
 Remove it with `petodoro --uninstall`, `./uninstall.sh` (add `--purge` to also
 delete settings), or `sudo apt remove petodoro` if you used the `.deb`.
 
-> Releases are built by CI when a `v*` tag is pushed
-> (`git tag v0.2.0 && git push --tags`). Until the first release exists,
-> options 1–3 have nothing to download, and `get.sh` falls back to building
-> from source.
+> Releases are built automatically by CI whenever a `v*` tag is pushed
+> (for example `git tag v0.2.1 && git push --tags`).
 
 ## The pets
 
