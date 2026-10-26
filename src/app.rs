@@ -1,7 +1,8 @@
 //! Application state: timers, pet mood, input handling and the menu.
 
-use crate::config::{Config, Mode, SCALES};
-use crate::pets::{Mood, Pose};
+use crate::config::{level, local_date, Config, Mode, SCALES};
+use crate::lines::{self, Event as Say};
+use crate::pets::{Mood, Persona, Pose};
 use crate::platform::{Res, Surface, X};
 use crate::render::{self, Bubble, MenuView, Scene};
 use crate::system;
@@ -11,12 +12,16 @@ use tiny_skia::Pixmap;
 use x11rb::protocol::Event;
 
 const DRAG_THRESHOLD: i32 = 4;
-const SLEEP_AFTER: Duration = Duration::from_secs(180);
 const CHEER_FOR: Duration = Duration::from_millis(3500);
 const LOVE_FOR: Duration = Duration::from_millis(1800);
+const DIZZY_FOR: Duration = Duration::from_millis(2600);
 const BLINK_FOR: Duration = Duration::from_millis(140);
+const COMBO_WINDOW: Duration = Duration::from_millis(700);
+const SNACK_COOLDOWN: Duration = Duration::from_secs(45);
+/// Horizontal swing (px) that counts as one shake.
+const SHAKE_PX: i32 = 25;
 
-const FOCUS_CHOICES: [u32; 10] = [10, 15, 20, 25, 30, 40, 45, 50, 60, 90];
+const FOCUS_CHOICES: [u32; 11] = [5, 10, 15, 20, 25, 30, 40, 45, 50, 60, 90];
 const SHORT_CHOICES: [u32; 5] = [3, 5, 7, 10, 15];
 const LONG_CHOICES: [u32; 5] = [10, 15, 20, 25, 30];
 
@@ -30,13 +35,18 @@ enum Action {
     Toggle,
     Reset,
     Skip,
+    Snack,
+    Stats,
     Mode,
     Pet,
     Size,
+    Theme,
     Focus,
     ShortBreak,
     LongBreak,
     Auto,
+    Wander,
+    Chatter,
     Sound,
     Autostart,
     Quit,
@@ -45,7 +55,7 @@ enum Action {
 impl Action {
     /// Settings that cycle through values keep the menu open.
     fn keeps_menu_open(self) -> bool {
-        !matches!(self, Action::Toggle | Action::Reset | Action::Skip | Action::Quit)
+        !matches!(self, Action::Toggle | Action::Reset | Action::Skip | Action::Snack | Action::Quit)
     }
 }
 
@@ -65,6 +75,43 @@ struct Press {
     win_origin: (i32, i32),
 }
 
+/// Detects the pet being shaken back and forth while dragged.
+#[derive(Default)]
+struct Shake {
+    dir: i32,
+    extreme: i32,
+    flips: Vec<Instant>,
+    shaken: bool,
+}
+
+impl Shake {
+    fn track(&mut self, x: i32, now: Instant) {
+        if self.dir == 0 {
+            if (x - self.extreme).abs() > SHAKE_PX {
+                self.dir = (x - self.extreme).signum();
+                self.extreme = x;
+            }
+        } else if (x - self.extreme) * self.dir > 0 {
+            self.extreme = x;
+        } else if (self.extreme - x) * self.dir > SHAKE_PX {
+            self.flips.push(now);
+            self.dir = -self.dir;
+            self.extreme = x;
+        }
+        self.flips.retain(|t| now.duration_since(*t) < Duration::from_millis(1500));
+        if self.flips.len() >= 4 {
+            self.shaken = true;
+        }
+    }
+}
+
+struct Walk {
+    dir: i32,
+    left: f32,
+    x: f32,
+    last: Instant,
+}
+
 pub struct App {
     pub x: X,
     surf: Surface,
@@ -76,8 +123,19 @@ pub struct App {
     pos: (i32, i32),
     press: Option<Press>,
     dragging: bool,
+    shake: Shake,
     cheer_until: Option<Instant>,
     love_until: Option<Instant>,
+    dizzy_until: Option<Instant>,
+    eat_until: Option<Instant>,
+    last_snack: Option<Instant>,
+    last_pat: Option<Instant>,
+    last_friend_pat: Option<Instant>,
+    combo: u32,
+    speech: Option<(String, Instant)>,
+    walk: Option<Walk>,
+    next_walk: Instant,
+    next_chatter: Instant,
     /// Shown in the bubble after a phase ends, until the user reacts.
     attention: Option<&'static str>,
     last_activity: Instant,
@@ -105,6 +163,10 @@ fn capitalize(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
+fn secs(n: u64) -> Duration {
+    Duration::from_secs(n)
+}
+
 impl App {
     pub fn new(x: X, cfg: Config) -> Res<App> {
         let (w, h) = render::window_size(cfg.scale);
@@ -112,7 +174,7 @@ impl App {
         let pos = clamp_pos(&x, cfg.pos.unwrap_or(default), w, h);
         let surf = x.create_pet_window(pos.0, pos.1, w, h)?;
         let now = Instant::now();
-        Ok(App {
+        let mut app = App {
             pm: Pixmap::new(w as u32, h as u32).ok_or("bad window size")?,
             pets: render::PetCache::default(),
             surf,
@@ -123,28 +185,61 @@ impl App {
             pos,
             press: None,
             dragging: false,
+            shake: Shake::default(),
             cheer_until: None,
-            love_until: Some(now + LOVE_FOR), // Say hi on startup.
+            love_until: Some(now + LOVE_FOR),
+            dizzy_until: None,
+            eat_until: None,
+            last_snack: None,
+            last_pat: None,
+            last_friend_pat: None,
+            combo: 0,
+            speech: None,
+            walk: None,
+            next_walk: now + secs(30),
+            next_chatter: now + secs(240),
             attention: None,
             last_activity: now,
-            next_blink: now + Duration::from_secs(2),
+            next_blink: now + secs(2),
             blink_until: now,
-            rng: std::process::id() | 1,
+            rng: (std::process::id() ^ 0x9e37_79b9) | 1,
             mood: Mood::Idle,
             mood_since: now,
             last_scene: None,
             dirty: true,
             menu: None,
             quit: false,
-        })
+        };
+        app.say_event(Say::Hello, now);
+        app.cfg.roll_day(&local_date());
+        Ok(app)
     }
 
     fn rand(&mut self) -> u32 {
-        // xorshift32: plenty for blink timing.
+        // xorshift32: plenty for blinks and chatter.
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 17;
         self.rng ^= self.rng << 5;
         self.rng
+    }
+
+    /// Random duration in [lo, hi) seconds.
+    fn rand_secs(&mut self, lo: u64, hi: u64) -> Duration {
+        Duration::from_millis(lo * 1000 + (self.rand() as u64 % ((hi - lo).max(1) * 1000)))
+    }
+
+    fn persona(&self) -> Persona {
+        self.cfg.pet.persona()
+    }
+
+    fn say(&mut self, text: String, now: Instant) {
+        let len = text.chars().count() as u64;
+        self.speech = Some((text, now + Duration::from_millis((2200 + len * 70).min(6000))));
+    }
+
+    fn say_event(&mut self, e: Say, now: Instant) {
+        let r = self.rand();
+        self.say(lines::pick(self.persona(), e, r).to_string(), now);
     }
 
     // ------------------------------------------------------------ events
@@ -163,19 +258,21 @@ impl App {
             Event::MotionNotify(e) if Some(e.event) == menu_win => self.menu_motion(e.event_x as i32, e.event_y as i32),
             Event::ButtonPress(e) if e.event == self.surf.win => {
                 let now = Instant::now();
-                self.last_activity = now;
                 match e.detail {
                     1 => {
+                        self.end_walk();
                         self.press = Some(Press {
                             root: (e.root_x as i32, e.root_y as i32),
                             win_origin: (e.root_x as i32 - e.event_x as i32, e.root_y as i32 - e.event_y as i32),
                         });
+                        self.shake = Shake { extreme: e.root_x as i32, ..Shake::default() };
                     }
                     2 => self.act(Action::Reset, true)?,
                     3 => self.open_menu(e.root_x as i32, e.root_y as i32)?,
                     4 | 5 => self.scroll(e.detail == 4),
                     _ => {}
                 }
+                self.last_activity = now;
             }
             Event::MotionNotify(e) if e.event == self.surf.win => {
                 if let Some(p) = &self.press {
@@ -186,20 +283,14 @@ impl App {
                     if self.dragging {
                         self.pos = (p.win_origin.0 + dx, p.win_origin.1 + dy);
                         self.x.move_window(&self.surf, self.pos.0, self.pos.1)?;
+                        self.shake.track(e.root_x as i32, Instant::now());
                     }
                 }
             }
             Event::ButtonRelease(e) if e.event == self.surf.win && e.detail == 1 => {
                 if self.press.take().is_some() {
                     if self.dragging {
-                        self.dragging = false;
-                        let clamped = clamp_pos(&self.x, self.pos, self.surf.w, self.surf.h);
-                        if clamped != self.pos {
-                            self.pos = clamped;
-                            self.x.move_window(&self.surf, clamped.0, clamped.1)?;
-                        }
-                        self.cfg.pos = Some(self.pos);
-                        self.cfg.save();
+                        self.drop_pet()?;
                     } else {
                         self.click(e.event_x as i32, e.event_y as i32);
                     }
@@ -216,14 +307,70 @@ impl App {
         Ok(())
     }
 
+    fn drop_pet(&mut self) -> Res<()> {
+        let now = Instant::now();
+        self.dragging = false;
+        let clamped = clamp_pos(&self.x, self.pos, self.surf.w, self.surf.h);
+        if clamped != self.pos {
+            self.pos = clamped;
+            self.x.move_window(&self.surf, clamped.0, clamped.1)?;
+        }
+        self.cfg.pos = Some(self.pos);
+        self.cfg.save();
+        if self.shake.shaken {
+            self.dizzy_until = Some(now + DIZZY_FOR);
+            self.say_event(Say::Dizzy, now);
+        } else if self.rand() % 3 == 0 {
+            self.say_event(Say::Drop, now);
+        }
+        Ok(())
+    }
+
     fn click(&mut self, x: i32, y: i32) {
         let (bx, by, bw, bh) = render::bubble_rect(self.cfg.scale);
         let on_bubble = self.cfg.mode != Mode::PetOnly && x >= bx && x < bx + bw && y >= by && y < by + bh;
         if on_bubble {
             let _ = self.act(Action::Toggle, true);
         } else {
-            self.love_until = Some(Instant::now() + LOVE_FOR);
+            self.pat(Instant::now());
         }
+    }
+
+    /// Clicking the pet: hearts, friendship, and a combo counter for fidgeting.
+    fn pat(&mut self, now: Instant) {
+        let was_asleep = self.mood == Mood::Sleep;
+        self.combo =
+            if self.last_pat.is_some_and(|t| now.duration_since(t) < COMBO_WINDOW) { self.combo + 1 } else { 1 };
+        self.last_pat = Some(now);
+        self.love_until = Some(now + LOVE_FOR);
+        if self.last_friend_pat.map_or(true, |t| now.duration_since(t) > secs(3)) {
+            self.last_friend_pat = Some(now);
+            self.cfg.add_friendship(self.cfg.pet, 1);
+            self.cfg.save();
+        }
+        if was_asleep {
+            self.say_event(Say::Wake, now);
+        } else if self.combo >= 3 {
+            let bang = if self.persona() == Persona::Hyper { "!!!" } else { "!" };
+            self.say(format!("COMBO X{}{bang}", self.combo), now);
+        } else if level(self.cfg.friendship(self.cfg.pet)) >= 4 && self.rand() % 2 == 0 {
+            self.say_event(Say::PatFriend, now);
+        } else {
+            self.say_event(Say::Pat, now);
+        }
+    }
+
+    fn snack(&mut self, now: Instant) {
+        if self.last_snack.is_some_and(|t| now.duration_since(t) < SNACK_COOLDOWN) {
+            self.say_event(Say::Full, now);
+            return;
+        }
+        self.last_snack = Some(now);
+        let fs = Mood::Eat.frame_secs(self.persona());
+        self.eat_until = Some(now + Duration::from_secs_f32(fs * Mood::Eat.cycle() as f32));
+        self.cfg.add_friendship(self.cfg.pet, 3);
+        self.cfg.save();
+        self.say_event(Say::Snack, now);
     }
 
     /// Mouse wheel: adjust the length of the current (not yet started) phase.
@@ -245,7 +392,12 @@ impl App {
             Action::Toggle => {
                 self.attention = None;
                 match self.cfg.mode {
-                    Mode::Pomodoro => self.pomo.toggle(now),
+                    Mode::Pomodoro => {
+                        self.pomo.toggle(now);
+                        if self.pomo.is_running() && self.pomo.phase == Phase::Focus {
+                            self.say_event(Say::FocusStart, now);
+                        }
+                    }
                     Mode::Stopwatch => self.sw.toggle(now),
                     Mode::PetOnly => {}
                 }
@@ -262,20 +414,29 @@ impl App {
                 self.attention = None;
                 self.pomo.skip(&self.cfg.pomo);
             }
+            Action::Snack => self.snack(now),
+            Action::Stats => {}
             Action::Mode => self.cfg.mode = self.cfg.mode.next(),
             Action::Pet => {
                 self.cfg.pet = self.cfg.pet.cycle(forward);
                 self.love_until = Some(now + LOVE_FOR);
+                self.say_event(Say::Hello, now);
             }
             Action::Size => {
                 let i = SCALES.iter().position(|(s, _)| *s >= self.cfg.scale).unwrap_or(0);
                 let n = SCALES.len();
                 self.set_scale(SCALES[if forward { (i + 1) % n } else { (i + n - 1) % n }].0)?;
             }
+            Action::Theme => self.cfg.theme = self.cfg.theme.cycle(forward),
             Action::Focus => self.cfg.pomo.focus_min = pick_next(&FOCUS_CHOICES, self.cfg.pomo.focus_min, forward),
             Action::ShortBreak => self.cfg.pomo.short_min = pick_next(&SHORT_CHOICES, self.cfg.pomo.short_min, forward),
             Action::LongBreak => self.cfg.pomo.long_min = pick_next(&LONG_CHOICES, self.cfg.pomo.long_min, forward),
             Action::Auto => self.cfg.pomo.auto_continue = !self.cfg.pomo.auto_continue,
+            Action::Wander => {
+                self.cfg.wander = !self.cfg.wander;
+                self.end_walk();
+            }
+            Action::Chatter => self.cfg.chatter = !self.cfg.chatter,
             Action::Sound => self.cfg.sound = !self.cfg.sound,
             Action::Autostart => {
                 if let Err(e) = system::set_autostart(!system::autostart_enabled()) {
@@ -344,29 +505,42 @@ impl App {
             Mode::PetOnly => {}
         }
         let first = items.is_empty();
+        items.push(("GIVE A SNACK ♥".into(), !first, Action::Snack));
+        let today = &c.today;
+        items.push((format!("TODAY: {} POMS, {} MIN", today.pomodoros, today.focus_minutes), false, Action::Stats));
+
         let mode = match c.mode {
             Mode::Pomodoro => "POMODORO",
             Mode::Stopwatch => "STOPWATCH",
             Mode::PetOnly => "JUST PET",
         };
-        items.push((format!("MODE: {mode}"), !first, Action::Mode));
-        items.push((format!("PET: {}", c.pet.name().to_uppercase()), false, Action::Pet));
+        items.push((format!("MODE: {mode}"), true, Action::Mode));
+        let pet = format!("PET: {} ({})", c.pet.name(), c.pet.persona().name()).to_uppercase();
+        items.push((pet, false, Action::Pet));
         let size = SCALES.iter().find(|(s, _)| *s >= c.scale).map_or("M", |(_, n)| n);
         items.push((format!("SIZE: {size}"), false, Action::Size));
+        items.push((format!("THEME: {}", c.theme.name().to_uppercase()), false, Action::Theme));
         if c.mode == Mode::Pomodoro {
             items.push((format!("FOCUS: {} MIN", c.pomo.focus_min), true, Action::Focus));
             items.push((format!("BREAK: {} MIN", c.pomo.short_min), false, Action::ShortBreak));
             items.push((format!("LONG BREAK: {} MIN", c.pomo.long_min), false, Action::LongBreak));
             items.push((format!("AUTO-START NEXT: {}", on_off(c.pomo.auto_continue)), false, Action::Auto));
         }
-        items.push((format!("SOUND: {}", on_off(c.sound)), true, Action::Sound));
+        items.push((format!("WALK AROUND: {}", on_off(c.wander)), true, Action::Wander));
+        items.push((format!("CHATTER: {}", on_off(c.chatter)), false, Action::Chatter));
+        items.push((format!("SOUND: {}", on_off(c.sound)), false, Action::Sound));
         items.push((format!("START ON LOGIN: {}", on_off(system::autostart_enabled())), false, Action::Autostart));
         items.push(("QUIT".into(), true, Action::Quit));
         let actions = items.iter().map(|i| i.2).collect();
         (items.into_iter().map(|(l, s, _)| (l, s)).collect(), actions)
     }
 
-    fn menu_accent(&self) -> u32 {
+    fn menu_title(&self) -> String {
+        let lv = level(self.cfg.friendship(self.cfg.pet));
+        format!("{}  LV {lv} ♥", self.cfg.pet.name().to_uppercase())
+    }
+
+    fn accent(&self) -> u32 {
         match self.cfg.mode {
             Mode::Pomodoro => match self.pomo.phase {
                 Phase::Focus => ACCENT_FOCUS,
@@ -386,8 +560,15 @@ impl App {
 
     fn open_menu(&mut self, rx: i32, ry: i32) -> Res<()> {
         self.close_menu()?;
+        self.end_walk();
         let (items, actions) = self.menu_items();
-        let view = MenuView { title: "PETODORO".into(), items, hover: None, accent: self.menu_accent() };
+        let view = MenuView {
+            title: self.menu_title(),
+            items,
+            hover: None,
+            accent: self.accent(),
+            theme: self.cfg.theme.resolve(self.cfg.pet),
+        };
         let (w, h) = render::menu_size(&view);
         let (x, y) = self.menu_origin(rx, ry, w, h);
         let surf = self.x.create_menu_window(x, y, w, h)?;
@@ -413,15 +594,21 @@ impl App {
 
     fn refresh_menu(&mut self) -> Res<()> {
         let (items, actions) = self.menu_items();
-        let accent = self.menu_accent();
+        let (title, accent, theme) = (self.menu_title(), self.accent(), self.cfg.theme.resolve(self.cfg.pet));
         let Some(m) = self.menu.as_mut() else { return Ok(()) };
         m.view.items = items;
+        m.view.title = title;
         m.view.accent = accent;
+        m.view.theme = theme;
         m.actions = actions;
         m.dirty = true;
         let (w, h) = render::menu_size(&m.view);
         if (w, h) != (m.surf.w, m.surf.h) {
-            self.x.move_resize(&mut m.surf, m.at.0, m.at.1, w, h)?;
+            // Keep it on screen if it grew.
+            let x = m.at.0.min(self.x.screen_w - w as i32).max(0);
+            let y = m.at.1.min(self.x.screen_h - h as i32).max(0);
+            m.at = (x, y);
+            self.x.move_resize(&mut m.surf, x, y, w, h)?;
             m.pm = Pixmap::new(w as u32, h as u32).ok_or("bad menu size")?;
         }
         Ok(())
@@ -470,9 +657,74 @@ impl App {
         }
     }
 
+    // ------------------------------------------------------------ walking
+
+    fn walk_speed(&self) -> f32 {
+        let base = match self.persona() {
+            Persona::Hyper => 120.0,
+            Persona::Angry => 70.0,
+            Persona::Sleepy => 22.0,
+            _ => 45.0,
+        };
+        base * self.cfg.scale / 1.5
+    }
+
+    fn walk_interval(&mut self) -> Duration {
+        match self.persona() {
+            Persona::Hyper => self.rand_secs(10, 30),
+            Persona::Sleepy => self.rand_secs(150, 300),
+            _ => self.rand_secs(45, 110),
+        }
+    }
+
+    fn start_walk(&mut self, now: Instant) {
+        let max_x = self.x.screen_w - self.surf.w as i32;
+        let dist = (40 + self.rand() % 160) as f32 * self.cfg.scale / 1.5;
+        let mut dir = if self.rand() % 2 == 0 { 1 } else { -1 };
+        // Head back toward the middle when near an edge.
+        if self.pos.0 < 80 {
+            dir = 1;
+        } else if self.pos.0 > max_x - 80 {
+            dir = -1;
+        }
+        self.walk = Some(Walk { dir, left: dist, x: self.pos.0 as f32, last: now });
+    }
+
+    fn end_walk(&mut self) {
+        if self.walk.take().is_some() {
+            self.cfg.pos = Some(self.pos);
+            self.cfg.save();
+        }
+    }
+
+    fn step_walk(&mut self, now: Instant) -> Res<()> {
+        let speed = self.walk_speed();
+        let max_x = (self.x.screen_w - self.surf.w as i32) as f32;
+        let Some(w) = self.walk.as_mut() else { return Ok(()) };
+        let dt = now.duration_since(w.last).as_secs_f32().min(0.2);
+        w.last = now;
+        let d = speed * dt;
+        w.x += w.dir as f32 * d;
+        w.left -= d;
+        if w.x <= 0.0 || w.x >= max_x {
+            w.x = w.x.clamp(0.0, max_x.max(0.0));
+            w.left = 0.0;
+        }
+        let nx = w.x.round() as i32;
+        let done = w.left <= 0.0;
+        if nx != self.pos.0 {
+            self.pos.0 = nx;
+            self.x.move_window(&self.surf, self.pos.0, self.pos.1)?;
+        }
+        if done {
+            self.end_walk();
+        }
+        Ok(())
+    }
+
     // ------------------------------------------------------- time & draw
 
-    pub fn update(&mut self, now: Instant) {
+    pub fn update(&mut self, now: Instant) -> Res<()> {
         if let Some(done) = self.pomo.tick(&self.cfg.pomo, now) {
             self.phase_done(done, now);
         }
@@ -480,11 +732,38 @@ impl App {
             self.blink_until = now + BLINK_FOR;
             self.next_blink = now + Duration::from_millis(2500 + (self.rand() % 4000) as u64);
         }
+        if self.speech.as_ref().is_some_and(|(_, until)| now >= *until) {
+            self.speech = None;
+        }
+
+        let calm = self.base_mood(now) == Mood::Idle && self.menu.is_none() && self.press.is_none();
+        if self.walk.is_some() {
+            if calm {
+                self.step_walk(now)?;
+            } else {
+                self.end_walk();
+            }
+        } else if calm && self.cfg.wander && now >= self.next_walk {
+            self.next_walk = now + self.walk_interval();
+            self.start_walk(now);
+        }
+        if calm && self.cfg.chatter && now >= self.next_chatter {
+            let wait = match self.persona() {
+                Persona::Hyper => self.rand_secs(90, 200),
+                _ => self.rand_secs(240, 480),
+            };
+            self.next_chatter = now + wait;
+            if self.speech.is_none() {
+                self.say_event(Say::Idle, now);
+            }
+        }
+
         let mood = self.compute_mood(now);
         if mood != self.mood {
             self.mood = mood;
             self.mood_since = now;
         }
+        Ok(())
     }
 
     fn phase_done(&mut self, done: Phase, now: Instant) {
@@ -492,7 +771,14 @@ impl App {
         let next = self.pomo.phase;
         let mins = self.cfg.pomo.minutes(next);
         let (title, body) = if done == Phase::Focus {
-            ("Focus session done!", format!("{pet} says: take a {mins} minute break~"))
+            self.cfg.roll_day(&local_date());
+            self.cfg.today.pomodoros += 1;
+            self.cfg.today.focus_minutes += self.cfg.pomo.focus_min;
+            self.cfg.total_pomodoros += 1;
+            self.cfg.add_friendship(self.cfg.pet, 5);
+            self.cfg.save();
+            let tip = lines::BREAK_TIPS[self.rand() as usize % lines::BREAK_TIPS.len()];
+            ("Focus session done!", format!("{pet} says: take a {mins} minute break~\n{tip}"))
         } else {
             ("Break's over!", format!("{pet} is ready for {mins} more minutes of focus!"))
         };
@@ -503,6 +789,7 @@ impl App {
             self.x.bell();
         }
         self.cheer_until = Some(now + CHEER_FOR);
+        self.say_event(if done == Phase::Focus { Say::FocusDone } else { Say::BreakDone }, now);
         self.attention = if self.cfg.pomo.auto_continue {
             None
         } else if next.is_break() {
@@ -513,15 +800,9 @@ impl App {
         self.last_activity = now;
     }
 
-    fn compute_mood(&self, now: Instant) -> Mood {
-        let active = |t: Option<Instant>| t.is_some_and(|t| now < t);
-        if self.dragging {
-            Mood::Held
-        } else if active(self.cheer_until) {
-            Mood::Cheer
-        } else if active(self.love_until) {
-            Mood::Love
-        } else if self.pomo.is_running() && self.cfg.mode != Mode::Stopwatch {
+    /// Mood from timers and idleness alone (no short reactions).
+    fn base_mood(&self, now: Instant) -> Mood {
+        if self.pomo.is_running() && self.cfg.mode != Mode::Stopwatch {
             if self.pomo.phase.is_break() {
                 Mood::Relax
             } else {
@@ -529,22 +810,58 @@ impl App {
             }
         } else if self.sw.is_running() && self.cfg.mode != Mode::Pomodoro {
             Mood::Focus
-        } else if self.attention.is_none() && now.duration_since(self.last_activity) > SLEEP_AFTER {
+        } else if self.attention.is_none() && now.duration_since(self.last_activity) > self.persona().sleep_after() {
             Mood::Sleep
         } else {
             Mood::Idle
         }
     }
 
+    fn compute_mood(&self, now: Instant) -> Mood {
+        let active = |t: Option<Instant>| t.is_some_and(|t| now < t);
+        if self.dragging {
+            Mood::Held
+        } else if active(self.dizzy_until) {
+            Mood::Dizzy
+        } else if active(self.cheer_until) {
+            Mood::Cheer
+        } else if active(self.eat_until) {
+            Mood::Eat
+        } else if active(self.love_until) {
+            Mood::Love
+        } else if self.walk.is_some() {
+            Mood::Walk
+        } else {
+            self.base_mood(now)
+        }
+    }
+
     fn pose(&self, now: Instant) -> Pose {
         let t = now.duration_since(self.mood_since).as_secs_f32();
-        let frame = (t / self.mood.frame_secs()) as u32 % self.mood.cycle();
-        Pose { mood: self.mood, frame, blink: self.mood.blinks() && now < self.blink_until }
+        let p = self.persona();
+        let frame = (t / self.mood.frame_secs(p)) as u32 % self.mood.cycle();
+        Pose {
+            mood: self.mood,
+            frame,
+            blink: self.mood.blinks() && now < self.blink_until,
+            persona: p,
+            flip: self.walk.as_ref().is_some_and(|w| w.dir < 0),
+        }
     }
 
     fn bubble(&self, now: Instant) -> Option<Bubble> {
-        match self.cfg.mode {
-            Mode::PetOnly => None,
+        let theme = self.cfg.theme.resolve(self.cfg.pet);
+        let speech = self.speech.as_ref().map(|(s, _)| s.clone());
+        let mut b = match self.cfg.mode {
+            Mode::PetOnly => Bubble {
+                label: String::new(),
+                time: String::new(),
+                progress: None,
+                accent: ACCENT_FOCUS,
+                paused: false,
+                speech: None,
+                theme,
+            },
             Mode::Pomodoro => {
                 let (p, s) = (&self.pomo, &self.cfg.pomo);
                 let running = p.is_running();
@@ -555,31 +872,42 @@ impl App {
                     (None, Phase::ShortBreak) => "BREAK".into(),
                     (None, Phase::LongBreak) => "LONG BREAK".into(),
                 };
-                let accent = match p.phase {
-                    Phase::Focus => ACCENT_FOCUS,
-                    Phase::ShortBreak => ACCENT_BREAK,
-                    Phase::LongBreak => ACCENT_LONG,
-                };
-                Some(Bubble {
+                Bubble {
                     label,
                     time: format_clock(p.remaining(now), true),
                     // Quantized so the bar alone doesn't force a redraw every tick.
                     progress: Some((p.progress(s, now) * 200.0) as u16 * 5),
-                    accent,
+                    accent: self.accent(),
                     paused: !running && self.attention.is_none(),
-                })
+                    speech: None,
+                    theme,
+                }
             }
             Mode::Stopwatch => {
                 let elapsed = self.sw.elapsed(now);
                 let running = self.sw.is_running();
-                Some(Bubble {
+                Bubble {
                     label: if !running && !elapsed.is_zero() { "PAUSED".into() } else { "STOPWATCH".into() },
                     time: format_clock(elapsed, false),
                     progress: None,
                     accent: ACCENT_WATCH,
                     paused: !running,
-                })
+                    speech: None,
+                    theme,
+                }
             }
+        };
+        match speech {
+            Some(s) => {
+                b.speech = Some(s);
+                // Only the speech matters while it's shown; keep the scene
+                // stable so the clock doesn't force redraws underneath.
+                b.time.clear();
+                b.progress = None;
+                Some(b)
+            }
+            None if self.cfg.mode == Mode::PetOnly => None,
+            None => Some(b),
         }
     }
 
@@ -601,8 +929,11 @@ impl App {
 
     /// How long the event loop may sleep before something on screen changes.
     pub fn next_timeout(&self, now: Instant) -> Duration {
+        if self.walk.is_some() {
+            return Duration::from_millis(33);
+        }
         let mut t = Duration::from_secs(10);
-        let fs = self.mood.frame_secs();
+        let fs = self.mood.frame_secs(self.persona());
         let into = now.duration_since(self.mood_since).as_secs_f32() % fs;
         t = t.min(Duration::from_secs_f32(fs - into));
         if self.mood.blinks() {
@@ -617,13 +948,22 @@ impl App {
             let ms = self.sw.elapsed(now).as_millis() as u64;
             t = t.min(Duration::from_millis(1000 - ms % 1000));
         }
-        for until in [self.cheer_until, self.love_until].into_iter().flatten() {
+        let deadlines = [
+            self.cheer_until,
+            self.love_until,
+            self.dizzy_until,
+            self.eat_until,
+            self.speech.as_ref().map(|s| s.1),
+            Some(self.next_walk),
+            Some(self.next_chatter),
+        ];
+        for until in deadlines.into_iter().flatten() {
             if until > now {
                 t = t.min(until - now);
             }
         }
         if self.mood == Mood::Idle && self.attention.is_none() {
-            let sleep_at = self.last_activity + SLEEP_AFTER;
+            let sleep_at = self.last_activity + self.persona().sleep_after();
             if sleep_at > now {
                 t = t.min(sleep_at - now + Duration::from_millis(5));
             }
@@ -637,4 +977,34 @@ fn clamp_pos(x: &X, (px, py): (i32, i32), w: u16, h: u16) -> (i32, i32) {
     let (w, h) = (w as i32, h as i32);
     let keep = 48;
     (px.clamp(keep - w, x.screen_w - keep), py.clamp(-h / 2, x.screen_h - keep))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shake_detection() {
+        let t0 = Instant::now();
+        let mut s = Shake { extreme: 500, ..Shake::default() };
+        let xs = [500, 540, 580, 530, 480, 540, 600, 520, 470, 560];
+        for (i, x) in xs.iter().enumerate() {
+            s.track(*x, t0 + Duration::from_millis(i as u64 * 80));
+        }
+        assert!(s.shaken);
+
+        let mut slow = Shake { extreme: 500, ..Shake::default() };
+        for (i, x) in xs.iter().enumerate() {
+            slow.track(*x, t0 + Duration::from_secs(i as u64));
+        }
+        assert!(!slow.shaken, "a slow drag back and forth is not a shake");
+    }
+
+    #[test]
+    fn choices_wrap() {
+        assert_eq!(pick_next(&FOCUS_CHOICES, 25, true), 30);
+        assert_eq!(pick_next(&FOCUS_CHOICES, 90, true), 5);
+        assert_eq!(pick_next(&FOCUS_CHOICES, 5, false), 90);
+        assert_eq!(pick_next(&FOCUS_CHOICES, 27, false), 25);
+    }
 }

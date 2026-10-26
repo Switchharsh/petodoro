@@ -1,136 +1,182 @@
 # Petodoro 🍅
 
 A tiny desktop pet that floats on your screen and keeps you company with a
-**pomodoro timer** and a **stopwatch**. Pick it up, drop it anywhere, pat it
-on the head. Made for Linux Mint (and any other X11 desktop).
+**pomodoro timer** and a **stopwatch**. Pick it up, drop it anywhere, pat it,
+feed it, shake it (it gets dizzy), and watch it wander around. Made for Linux
+Mint (and any other X11 desktop). Uses about 5 MB of RAM and almost no CPU.
 
-![Every pet in every mood](assets/preview.png)
+![All 14 pets](assets/pets.png)
 
-## Features
+## Install: pick the easiest one for you
 
-- **Floating pet**: an always-on-top, borderless, transparent window. Drag it
-  anywhere and it remembers where you left it. Clicks on transparent pixels go
-  through to the windows underneath.
-- **Pomodoro**: focus / short break / long break cycles (25/5/15 minutes by
-  default, with a long break every 4 sessions). You get a desktop notification
-  and a chime at the end of each phase, and the pet celebrates.
-- **Stopwatch**: start, pause and reset.
-- **Just-pet mode**: hides the speech bubble so only the pet is shown.
-- **5 original pets**, all drawn as vector art so they stay sharp at any size:
+**1. Double-click a `.deb` (easiest).** Download `petodoro_*_amd64.deb` from the
+[Releases page](https://github.com/Switchharsh/petodoro/releases), double-click
+it, press *Install Package*, then open **Petodoro** from the app menu. To
+start it on every login, right-click the pet → *START ON LOGIN*.
 
-  | Pet        | Description                       |
-  |------------|-----------------------------------|
-  | **Sakura** | pink twin-tails, sailor uniform    |
-  | **Yuki**   | silver hair, cat-ear hoodie        |
-  | **Hikari** | blonde ponytail, maid outfit       |
-  | **Mochi**  | orange tabby cat                   |
-  | **Puru**   | slime with a little sprout         |
-
-  Each pet has 7 moods: idle (blinks and breathes), focus (reads a book),
-  break (hums), sleepy (dozes off after 3 minutes with nothing happening),
-  cheering (a phase just ended), love (you clicked it) and held (you're
-  dragging it).
-- **Light on resources**: about 4–5 MB of RAM and well under 1% of one CPU
-  core. It's written in Rust and talks to X11 directly with no GTK, Qt or
-  GPU, and it only redraws when something on screen actually changes. The
-  binary is about 1 MB.
-
-## Install (Linux Mint / Ubuntu / Debian)
+**2. One command in a terminal.** This installs into your home folder, adds
+an app-menu entry, starts on login, and launches the pet:
 
 ```sh
-git clone <this repo> petodoro
-cd petodoro
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash
 ```
 
-That's it. The script will:
+**3. Just the program.** Download `petodoro-x86_64-linux.tar.gz` from Releases,
+unpack it, and run `./petodoro`. That's the whole app; nothing else is
+needed. `./petodoro --install` copies it into your home folder and sets up
+the app menu and autostart for you.
 
-1. offer to install Rust through [rustup](https://rustup.rs) if you don't have
-   it. Rust is only needed to build. `sudo apt install cargo` also works
-   (Rust 1.75 or newer).
-2. build Petodoro. It's pure Rust, so **no `-dev` packages are needed**.
-3. install it to `~/.local/bin/petodoro`, add **Petodoro** to your app menu
-   with an icon, offer to start it on login, and launch it.
+**4. From source.** `git clone` this repo and run `./install.sh`. It installs
+Rust through [rustup](https://rustup.rs) if you don't have it (or use
+`sudo apt install cargo`, Rust 1.75+), builds Petodoro (no `-dev` packages
+needed), and runs `petodoro --install`.
 
-Use `./install.sh -y` to accept every default without being asked.
+Remove it with `petodoro --uninstall`, `./uninstall.sh` (add `--purge` to also
+delete settings), or `sudo apt remove petodoro` if you used the `.deb`.
 
-A prebuilt `petodoro-x86_64-linux.tar.gz` is attached to tagged GitHub
-releases (built by CI). Unpack it and run `./install.sh` inside to skip the
-build entirely.
+> Releases are built by CI when a `v*` tag is pushed
+> (`git tag v0.2.0 && git push --tags`). Until the first release exists,
+> options 1–3 have nothing to download, and `get.sh` falls back to building
+> from source.
 
-To remove it: `./uninstall.sh` (add `--purge` to also delete your settings).
+## The pets
 
-## Using it
+Each pet has a **personality** that changes its face, how fast it moves, how
+quickly it falls asleep, and everything it says.
 
-| Do this                       | And this happens                                   |
-|-------------------------------|----------------------------------------------------|
-| **Drag** the pet              | pick it up and drop it anywhere                    |
-| **Click** the speech bubble   | start / pause the timer                            |
-| **Click** the pet             | pet them ♥                                         |
-| **Middle-click**              | reset the timer                                    |
-| **Scroll** on the pet         | ±1 minute on a phase that hasn't started yet       |
-| **Right-click**               | menu                                               |
+| Pet        | Personality | Looks like                                   | Theme  |
+|------------|-------------|----------------------------------------------|--------|
+| **Sakura** | sweet       | pink twin-tails, sailor uniform              | light  |
+| **Yuki**   | sweet       | silver hair, cat-ear hoodie                  | light  |
+| **Hikari** | sweet       | blonde ponytail, maid outfit                 | light  |
+| **Rin**    | tsundere    | orange twin buns, school blazer, fang        | light  |
+| **Lilith** | tsundere    | gothic vampire girl with bat wings           | dark   |
+| **Akane**  | angry       | red-haired delinquent with a bandage         | light  |
+| **Nemu**   | sleepy      | pajamas, nightcap, hugs her pillow           | light  |
+| **Mochi**  | sweet       | orange tabby cat                             | light  |
+| **Kuro**   | tsundere    | pure-black neon cat, made for AMOLED screens | amoled |
+| **Pochi**  | hyper       | shiba inu with endless zoomies               | light  |
+| **Puru**   | hyper       | bouncy slime with a sprout                   | light  |
+| **Boo**    | sweet       | little floating ghost                        | light  |
+| **Hinote** | angry       | tiny fire spirit with a short fuse           | light  |
+| **Bolt**   | sweet       | robot with a glowing LED face                | dark   |
 
-The right-click menu has pause/resume/reset/skip and lets you change the
-mode (pomodoro / stopwatch / just pet), the pet, the size (S/M/L/XL), focus,
-break and long break lengths, auto-start next phase, sound, start on login,
-and quit. In the menu, left-click moves a setting forward and right-click
-moves it back.
+- **Sweet**: smiles, hearts, cheers you on.
+- **Tsundere**: pouts, crosses her arms, blushes and looks away when patted.
+  *"B-BAKA! DON'T TOUCH ME!"* Gets softer as your friendship level rises.
+- **Angry**: scowls, keeps her hands on her hips, shows anger marks 💢. *"WORK. OR ELSE."*
+- **Sleepy**: half-closed eyes, nods off after 40 seconds, blows snot bubbles. *"FIVE MORE MINUTES..."*
+- **Hyper**: bounces nonstop, sparkly eyes, walks around often, talks a lot.
+  *"LET'S CRUSH IT!!!"* Great company if you have ADHD and like a bit of
+  energy (and noise) next to your work.
+
+The bubble and menu can be **light**, **dark** or **AMOLED** (pure black). By
+default they follow the pet; change it from the menu or with `--theme`.
+
+Every pet in every mood (idle, focus, break, asleep, cheering, patted, held,
+walking, dizzy, eating):
+
+![Every pet in every mood](assets/moods.png)
+
+## Things to do with your pet
+
+| Do this                       | And this happens                                         |
+|-------------------------------|----------------------------------------------------------|
+| **Drag** the pet              | pick it up and drop it anywhere                          |
+| **Shake** it while dragging   | it gets dizzy (spiral eyes, stars)                       |
+| **Click** the speech bubble   | start / pause the timer                                  |
+| **Click** the pet             | pat it; click fast for a **combo counter** (fidget toy!) |
+| **Middle-click**              | reset the timer                                          |
+| **Scroll** on the pet         | ±1 minute on a phase that hasn't started yet             |
+| **Right-click**               | menu                                                     |
+
+- **Talks**: it greets you, reacts to pats, snacks and shakes, cheers when a
+  session ends, and sometimes reminds you to drink water or stretch
+  (turn this off with *CHATTER*).
+- **Snacks**: *GIVE A SNACK* in the menu, and it munches a cookie. Overfeed it
+  and it complains.
+- **Friendship**: pats, snacks and finished pomodoros raise your friendship
+  level with each pet, shown in the menu title. High levels unlock nicer
+  lines (even from the tsunderes).
+- **Walks around**: when nothing's running it wanders along the screen
+  sometimes (never during a focus session). Turn it off with *WALK AROUND*.
+- **Daily stats**: the menu shows today's pomodoros and focus minutes.
+- **Break tips**: the end-of-focus notification suggests something healthy to
+  do with your break.
+- **Short sessions**: focus can be as short as 5 minutes, which helps for
+  getting started on days when 25 feels like too much.
+
+The menu also has pause/resume/reset/skip, mode (pomodoro / stopwatch / just
+pet), pet, size (S–XL), theme, focus/break/long-break lengths, auto-start
+next phase, sound, start on login, and quit. Left-click moves a setting
+forward and right-click moves it back.
 
 ### Command line
 
 ```
-petodoro --pet yuki            # choose a pet (sakura, yuki, hikari, mochi, puru)
+petodoro --pet kuro            # choose a pet (see --list-pets)
 petodoro --mode stopwatch      # pomodoro | stopwatch | pet
+petodoro --theme amoled        # auto | light | dark | amoled
 petodoro --scale 2             # bigger pet
 petodoro --focus 50 --break 10 # custom pomodoro lengths
 petodoro --reset-position      # lost your pet? bring it back to the corner
-petodoro --autostart on|off    # start on login
+petodoro --install / --uninstall
+petodoro --autostart on|off
 petodoro --list-pets
+petodoro --gallery pets.png    # render every pet
 petodoro --preview sheet.png   # render every pet in every mood
-petodoro --help
 ```
 
-Settings are saved to `~/.config/petodoro/config` (plain `key = value` text
-that you can edit by hand). Only one pet runs at a time, so launching it
-again does nothing.
+Settings, friendship and stats live in `~/.config/petodoro/config` (plain
+text). Only one pet runs at a time.
+
+## Light on resources
+
+About 5 MB of RAM and under 0.5% of one CPU core, even while a timer runs or
+the pet walks. It's written in Rust and talks to X11 directly (no GTK, Qt or
+GPU). It only redraws when something visible changes, reuses cached animation
+frames, and sleeps in between. The program is about 1.3 MB.
 
 ## Troubleshooting
 
-- **Black box around the pet**: your desktop compositor is off. Petodoro
-  then cuts the window to the pet's outline, so edges look a little jaggier
-  but it still works. Cinnamon always has compositing on.
-- **No sound**: Petodoro plays the freedesktop "complete" sound with
-  `paplay`. If that's missing it tries `pw-play` and `canberra-gtk-play`, and
-  finally the system bell. Turn sound off from the menu.
-- **No notification**: notifications use `notify-send` (`sudo apt install
-  libnotify-bin`).
-- **Wayland**: Petodoro runs through XWayland, but some Wayland compositors
-  don't allow always-on-top windows or let apps place their own windows.
-  Linux Mint's default Cinnamon session is X11, where everything works.
+- **Black box around the pet**: your compositor is off. Petodoro then cuts
+  the window to the pet's outline, so edges look slightly jaggier but it
+  still works. Cinnamon always has compositing on.
+- **No sound**: Petodoro uses `paplay` / `pw-play` with the freedesktop
+  "complete" sound, falling back to `canberra-gtk-play` and then the system
+  bell. You can turn sound off in the menu.
+- **No notification**: run `sudo apt install libnotify-bin`.
+- **Wayland**: it runs through XWayland, but some Wayland compositors won't
+  keep it on top or let it move itself. Mint's default Cinnamon session is
+  X11, where everything works.
+- **`.deb` won't install on an older Mint**: release builds need glibc 2.35
+  (Mint 21 or newer). On older systems, build from source.
 
 ## How it's built
 
 ```
 src/
   main.rs       command line + event loop (sleeps on poll() until the next frame is due)
-  app.rs        state: timers, moods, mouse handling, menu
+  app.rs        state: timers, moods, mouse, shaking, walking, speech, menu
   platform.rs   X11: ARGB window, always-on-top hints, SHAPE input regions, popup menu
-  render.rs     speech bubble, menu, pet-frame cache, preview sheet
-  pets/         the pets, drawn as vector shapes in a 100x100 box
+  render.rs     speech bubble + themes, menu, pet-frame cache, preview sheets
+  pets/         the pets, as vector shapes in a 100x100 box (girl rig, cat, dog, ...)
+  lines.rs      what each personality says
   font.rs       5x7 pixel font (no font files to ship)
   timer.rs      pomodoro / stopwatch state machines (unit tested)
-  config.rs     settings file
-  system.rs     notify-send, sounds, autostart, single-instance lock
+  config.rs     settings, friendship, daily stats
+  system.rs     notifications, sounds, autostart, --install, single instance
+scripts/build-deb.sh   packages the .deb (used by CI)
+get.sh                 the one-line installer
 ```
 
 Dependencies: [`x11rb`](https://crates.io/crates/x11rb) (a pure-Rust X11
-protocol client) and [`tiny-skia`](https://crates.io/crates/tiny-skia)
-(a CPU 2D renderer). Run the tests with `cargo test`.
+client) and [`tiny-skia`](https://crates.io/crates/tiny-skia) (a CPU 2D
+renderer). Run the tests with `cargo test`.
 
-Want another pet? Add a file in `src/pets/`, draw it with the helpers in
-`gfx.rs`, and register it in `pets/mod.rs`. `petodoro --preview out.png`
-shows how it looks in every mood.
+**Adding a pet**: add a file in `src/pets/` (or a new `Style` for the girl
+rig in `girl.rs`), register it in `pets/mod.rs` with a personality, then
+check every mood with `petodoro --preview out.png`.
 
 ## License
 

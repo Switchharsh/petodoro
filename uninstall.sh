@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# Remove everything install.sh put in place. Your settings are kept unless
-# you pass --purge.
+# Remove Petodoro. Settings are kept unless you pass --purge.
 set -euo pipefail
-
-PREFIX="${PREFIX:-$HOME/.local}"
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-
-pkill -x petodoro 2>/dev/null || true
-rm -f "$PREFIX/bin/petodoro" \
-      "$PREFIX/share/applications/petodoro.desktop" \
-      "$PREFIX/share/icons/hicolor/256x256/apps/petodoro.png" \
-      "$CONFIG/autostart/petodoro.desktop"
-if [[ "${1:-}" == "--purge" ]]; then
-    rm -rf "$CONFIG/petodoro"
+if [[ -x "$HOME/.local/bin/petodoro" ]]; then
+    "$HOME/.local/bin/petodoro" --uninstall
+else
+    rm -f "$HOME/.local/share/applications/petodoro.desktop" \
+          "$HOME/.local/share/icons/hicolor/256x256/apps/petodoro.png" \
+          "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/petodoro.desktop"
+    echo "Petodoro removed."
 fi
-echo "Petodoro removed. Bye bye~"
+if [[ "${1:-}" == "--purge" ]]; then
+    rm -rf -- "${XDG_CONFIG_HOME:-$HOME/.config}/petodoro"
+    echo "Settings deleted too."
+fi

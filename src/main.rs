@@ -5,6 +5,7 @@ mod app;
 mod config;
 mod font;
 mod gfx;
+mod lines;
 mod pets;
 mod platform;
 mod render;
@@ -21,16 +22,23 @@ petodoro - a floating desktop pet with a pomodoro timer and stopwatch
 USAGE:
     petodoro [OPTIONS]
 
+SETUP:
+    --install             copy petodoro to ~/.local/bin, add it to the app menu,
+                          start it on login, and launch it
+    --uninstall           undo --install (settings are kept)
+
 OPTIONS:
-    --pet NAME            sakura | yuki | hikari | mochi | puru
+    --pet NAME            see --list-pets
     --mode MODE           pomodoro | stopwatch | pet
+    --theme THEME         auto | light | dark | amoled (bubble and menu)
     --scale N             size multiplier (1 = small, 1.5 = default, 2.5 = huge)
     --focus MIN           focus session length in minutes
     --break MIN           short break length in minutes
     --reset-position      put the pet back in the bottom-right corner
     --autostart on|off    start (or stop starting) petodoro when you log in
-    --list-pets           show the available pets
+    --list-pets           show the available pets and their personalities
     --preview FILE.png    render every pet in every mood to a PNG and exit
+    --gallery FILE.png    render all pets saying hello to a PNG and exit
     --icon FILE.png       render a 256px app icon and exit
     -h, --help            show this help
     -V, --version         show the version
@@ -38,12 +46,13 @@ OPTIONS:
 Options that change settings are remembered in ~/.config/petodoro/config.
 
 MOUSE:
-    left-drag             pick the pet up and drop it anywhere
+    left-drag             pick the pet up and drop it anywhere (shake it and it gets dizzy)
     left-click bubble     start / pause the timer
-    left-click pet        pet them <3
+    left-click pet        pet them (click fast for a combo!)
     middle-click          reset the timer
     scroll on pet         change the length of a phase that hasn't started
-    right-click           menu (mode, pet, size, timer lengths, sound, autostart, quit)
+    right-click           menu: snacks, stats, mode, pet, size, theme, timer lengths,
+                          walking, chatter, sound, autostart, quit
 ";
 
 fn die(msg: impl std::fmt::Display) -> ! {
@@ -71,9 +80,33 @@ fn main() {
             }
             "--list-pets" => {
                 for p in pets::ALL {
-                    println!("{:<8} {}", p.name(), p.blurb());
+                    println!("{:<8} {:<9} {}", p.name(), p.persona().name(), p.blurb());
                 }
                 return;
+            }
+            "--install" => {
+                let bin = system::install_self().unwrap_or_else(|e| die(format!("install failed: {e}")));
+                println!("Installed {}", bin.display());
+                println!("Petodoro is in your app menu and will start when you log in");
+                println!("(turn that off from its right-click menu). Launching it now~");
+                system::launch(&bin);
+                return;
+            }
+            "--uninstall" => {
+                system::uninstall_self().unwrap_or_else(|e| die(format!("uninstall failed: {e}")));
+                println!("Petodoro removed (settings kept in ~/.config/petodoro). Bye bye~");
+                return;
+            }
+            "--gallery" => {
+                let out = value();
+                render::gallery(1.5, 7).save_png(&out).unwrap_or_else(|e| die(e));
+                println!("wrote {out}");
+                return;
+            }
+            "--theme" => {
+                let v = value();
+                cfg.theme = config::ThemeChoice::from_name(&v).unwrap_or_else(|| die(format!("unknown theme {v:?}")));
+                changed = true;
             }
             "--preview" => {
                 let out = value();
@@ -160,7 +193,7 @@ fn run(cfg: Config) -> platform::Res<()> {
             return Ok(());
         }
         let now = Instant::now();
-        app.update(now);
+        app.update(now)?;
         app.render(now)?;
         app.x.conn.flush()?;
         // Events may have been buffered while we were talking to the server.

@@ -28,12 +28,18 @@ jobs:
           mkdir -p dist/petodoro
           cp target/release/petodoro README.md LICENSE install.sh uninstall.sh dist/petodoro/
           tar -C dist -czf petodoro-x86_64-linux.tar.gz petodoro
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          scripts/build-deb.sh target/release/petodoro "$version" .
       - uses: actions/upload-artifact@v4
         with:
           name: petodoro-x86_64-linux
-          path: petodoro-x86_64-linux.tar.gz
+          path: |
+            petodoro-x86_64-linux.tar.gz
+            petodoro_*_amd64.deb
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: petodoro-x86_64-linux.tar.gz
+          files: |
+            petodoro-x86_64-linux.tar.gz
+            petodoro_*_amd64.deb
