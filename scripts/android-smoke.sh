@@ -14,9 +14,9 @@ shot() {
     set +x
     echo "STATE $1: pid=$(adb shell pidof "$pkg" | tr -d '\r') overlays=$(adb shell dumpsys window windows | grep -c "$pkg")"
     if command -v ffmpeg >/dev/null; then
-        ffmpeg -loglevel error -y -i "$out/$1.png" -vf scale=300:-1 -q:v 7 "$out/$1.jpg"
+        ffmpeg -loglevel error -y -i "$out/$1.png" -vf scale=200:-1 -q:v 18 "$out/$1.jpg"
         echo "BEGIN-SHOT $1"
-        base64 -w 100 "$out/$1.jpg"
+        base64 -w 0; echo "$out/$1.jpg"
         echo "END-SHOT $1"
     fi
     set -x
