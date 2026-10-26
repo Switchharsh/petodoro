@@ -102,8 +102,8 @@ impl Display {
         }
         let (w, h, density) = *SCREEN.lock().unwrap();
         let screen = Bounds { x: 0, y: 0, w, h };
-        // Keep clear of the navigation bar at the bottom.
-        let work = Bounds { x: 0, y: 0, w, h: h - (48.0 * density) as i32 };
+        // Start above the launcher's dock and search bar, not on top of them.
+        let work = Bounds { x: 0, y: 0, w, h: h - (200.0 * density) as i32 };
         Ok(Display { screen, work, ui_scale: (density / 1.6).max(1.0) })
     }
 

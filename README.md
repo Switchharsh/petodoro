@@ -5,12 +5,13 @@
 <p align="center">A tiny desktop pet that floats on your screen and keeps you company with a
 <b>pomodoro timer</b> and a <b>stopwatch</b>. Pick it up, drop it anywhere, pat it,
 feed it, shake it (it gets dizzy) and watch it wander around.<br>
-Runs on <b>Linux</b>, <b>Windows</b> and <b>macOS</b> with about 5 MB of RAM and almost no CPU.</p>
+Runs on <b>Linux</b>, <b>Windows</b>, <b>macOS</b> and <b>Android</b> with about 5 MB of RAM and almost no CPU.</p>
 
 <p align="center">
 <a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-amd64.deb"><img src="https://img.shields.io/badge/Linux%20Mint%20%2F%20Ubuntu-.deb-ff5c8a?style=for-the-badge&logo=linuxmint&logoColor=white" alt="Download for Linux Mint / Ubuntu"></a>
 <a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-windows.exe"><img src="https://img.shields.io/badge/Windows-.exe-3a8fd6?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
 <a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-macos.zip"><img src="https://img.shields.io/badge/macOS-.app-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
+<a href="https://github.com/Switchharsh/petodoro/releases/latest/download/petodoro-android.apk"><img src="https://img.shields.io/badge/Android-.apk-3fae6a?style=for-the-badge&logo=android&logoColor=white" alt="Download for Android"></a>
 <br>
 <a href="https://github.com/Switchharsh/petodoro/releases/latest"><img src="https://img.shields.io/github/v/release/Switchharsh/petodoro?style=for-the-badge&label=latest&color=3fae6a" alt="Latest release"></a>
 <a href="https://github.com/Switchharsh/petodoro/releases/latest"><img src="https://img.shields.io/badge/more-ARM%20%2F%20portable-8a63d2?style=for-the-badge" alt="All downloads"></a>
@@ -56,12 +57,30 @@ Open → Open**. Or, in Terminal:
 curl -fsSL https://raw.githubusercontent.com/Switchharsh/petodoro/HEAD/get.sh | bash
 ```
 
+### 🤖 Android 8+
+Click the **Android** button above on your phone (or grab `petodoro-android.apk`
+from the Releases page) and open it. Android asks you to allow installing apps
+from your browser or file manager the first time. Then open **Petodoro**, tap
+**Allow "Display over other apps"**, and your pet appears on top of every app.
+
+On a phone: **drag** to move, **tap the bubble** to start / pause the timer,
+**tap the pet** to pat it, **long-press** for the menu. Tap anywhere else to
+close the menu. Hide the pet from its notification or from the app. "Start on
+login" in the menu makes it come back after a reboot.
+
+> The APK is signed with a public debug key kept in the repository, so it
+> installs and updates fine but isn't from the Play Store. To sign releases
+> with your own private key, add the repository secrets
+> `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
+> and `ANDROID_KEY_PASSWORD` (users then reinstall once to switch keys).
+
 ### From source (any system)
 `git clone` this repo and run `./install.sh` (Linux/macOS). It installs Rust
 if needed, builds, and runs `petodoro --install`. On Windows:
 `cargo build --release`, then `target\release\petodoro.exe --install`.
 
-**Uninstall:** `petodoro --uninstall` (or `sudo apt remove petodoro` for the `.deb`).
+**Uninstall:** `petodoro --uninstall` (or `sudo apt remove petodoro` for the `.deb`;
+on Android, uninstall it like any app).
 
 > Releases are built automatically by CI for every platform: every push to the
 > default branch publishes the version in `Cargo.toml`. Bump that version to
@@ -181,6 +200,9 @@ frames, and sleeps in between. The program is about 1.3 MB.
   "complete" sound, falling back to `canberra-gtk-play` and then the system
   bell. You can turn sound off in the menu.
 - **No notification**: run `sudo apt install libnotify-bin`.
+- **Android: taps next to the pet don't reach the app underneath**: Android
+  doesn't let floating windows pass touches through their transparent parts,
+  so the pet's rectangle catches them. Drag the pet to a quiet spot.
 - **Wayland**: it runs through XWayland, but some Wayland compositors won't
   keep it on top or let it move itself. Mint's default Cinnamon session is
   X11, where everything works.
@@ -199,7 +221,9 @@ frames, and sleeps in between. The program is about 1.3 MB.
 src/
   main.rs       command line + event loop (sleeps on poll() until the next frame is due)
   app.rs        state: timers, moods, mouse, shaking, walking, speech, menu
-  platform/     one backend per OS: x11.rs (Linux), win32.rs (Windows), macos.rs (Cocoa)
+  lib.rs        everything shared; main.rs is the desktop command line, android.rs the JNI entry points
+  platform/     one backend per OS: x11.rs (Linux), win32.rs (Windows), macos.rs (Cocoa), android.rs
+android/              the small Java app around the Rust library (overlay service, setup screen)
   render.rs     speech bubble + themes, menu, pet-frame cache, preview sheets
   pets/         the pets, as vector shapes in a 100x100 box (girl rig, cat, dog, ...)
   lines.rs      what each personality says

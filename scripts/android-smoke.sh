@@ -57,7 +57,7 @@ dpi=$(adb shell wm density | tr -d '\r' | awk -F': ' '/Physical/{print $2}')
 read -r bx by px py < <(awk -v W="$W" -v H="$H" -v dpi="$dpi" 'BEGIN {
   d = dpi / 160; ui = d / 1.6; if (ui < 1) ui = 1; s = 1.5 * ui
   w = int(120 * s + 0.999); h = int(160 * s + 0.999)
-  x0 = W - w - 60; y0 = (H - int(48 * d)) - h - 40
+  x0 = W - w - 60; y0 = (H - int(200 * d)) - h - 40
   printf "%d %d %d %d\n", x0 + 60 * s, y0 + 24 * s, x0 + 60 * s, y0 + 125 * s }')
 echo "screen ${W}x${H} @${dpi}dpi, bubble at $bx,$by, pet at $px,$py"
 
