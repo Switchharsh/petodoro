@@ -166,8 +166,12 @@ fn main() {
     }
 
     if !system::single_instance() {
-        eprintln!("petodoro is already running");
-        return;
+        // An older or replaced copy is still running (e.g. right after an
+        // upgrade): ask it to quit and take over. Otherwise leave it be.
+        if !system::stop_outdated_instances() || !wait_for_lock() {
+            eprintln!("petodoro is already running");
+            return;
+        }
     }
     if changed {
         cfg.save();
@@ -180,6 +184,17 @@ fn main() {
         }
         die(e);
     }
+}
+
+/// Wait (up to 3 s) for a quitting instance to release the lock.
+fn wait_for_lock() -> bool {
+    for _ in 0..30 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if system::single_instance() {
+            return true;
+        }
+    }
+    false
 }
 
 fn run(cfg: Config) -> platform::Res<()> {

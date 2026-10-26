@@ -182,16 +182,42 @@ mod os {
         remove_files(&paths)
     }
 
+    /// Running petodoro processes other than this one: (pid, executable).
+    fn others() -> Vec<(u32, String)> {
+        let me = std::process::id();
+        let Ok(dir) = fs::read_dir("/proc") else { return vec![] };
+        dir.flatten()
+            .filter_map(|e| {
+                let pid = e.file_name().to_str()?.parse::<u32>().ok()?;
+                let comm = fs::read_to_string(e.path().join("comm")).ok()?;
+                if pid == me || comm.trim() != "petodoro" {
+                    return None;
+                }
+                let exe = fs::read_link(e.path().join("exe")).map(|p| p.display().to_string()).unwrap_or_default();
+                Some((pid, exe))
+            })
+            .collect()
+    }
+
+    /// Stop running copies that are a different binary than this one, or
+    /// whose binary was replaced on disk (an upgrade). Returns true if any
+    /// were asked to quit.
+    pub fn stop_outdated_instances() -> bool {
+        let mine = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+        let mut stopped = false;
+        for (pid, exe) in others() {
+            if exe != mine || exe.ends_with(" (deleted)") {
+                unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                stopped = true;
+            }
+        }
+        stopped
+    }
+
     /// Ask any other running petodoro to quit (but not this process).
     fn stop_others() {
-        let me = std::process::id();
-        let Ok(dir) = fs::read_dir("/proc") else { return };
-        for entry in dir.flatten() {
-            let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else { continue };
-            let is_pet = fs::read_to_string(entry.path().join("comm")).is_ok_and(|c| c.trim() == "petodoro");
-            if pid != me && is_pet {
-                unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-            }
+        for (pid, _) in others() {
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
         }
     }
 }
@@ -296,6 +322,10 @@ mod os {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         }
+    }
+
+    pub fn stop_outdated_instances() -> bool {
+        false
     }
 
     fn stop_others() {
@@ -419,6 +449,10 @@ mod os {
         quiet(Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &script])).status()?;
         set_run_key(&bin)?;
         Ok(bin)
+    }
+
+    pub fn stop_outdated_instances() -> bool {
+        false
     }
 
     pub fn uninstall_self() -> std::io::Result<()> {

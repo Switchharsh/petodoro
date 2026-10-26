@@ -546,6 +546,7 @@ impl App {
                 items.push((format!("SOUND: {}", on_off(c.sound)), false, Action::Sound));
                 let login = on_off(system::autostart_enabled());
                 items.push((format!("START ON LOGIN: {login}"), false, Action::Autostart));
+                items.push((format!("PETODORO V{}", env!("CARGO_PKG_VERSION")), true, Action::Stats));
             }
             Page::Pets => {
                 items.push(("< BACK".into(), false, Action::Page(Page::Main)));
